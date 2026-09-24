@@ -1,0 +1,91 @@
+name: Release builds
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    # branch pushes build only when packaging changes (tags always build)
+    paths:
+      - "packaging/**"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, os: windows-latest }
+          - { name: macos-arm64, os: macos-14 }
+          - { name: macos-x64, os: macos-15-intel }
+          - { name: linux-x64, os: ubuntu-22.04 }
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: System packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libxkbcommon-x11-0 libpulse0 \
+            libxcb-cursor0 libfontconfig1
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" pillow
+
+      - name: Build
+        run: python packaging/build.py
+
+      - name: Smoke test (bundle starts, CLI works)
+        shell: bash
+        env:
+          CUTSENSEI_SMOKE_TEST: ${{ github.workspace }}/smoke.png
+          CUTSENSEI_SETTINGS: ${{ github.workspace }}/smoke.ini
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then DIR=dist/CutSensei.app/Contents/MacOS; EXT=""
+          elif [ "$RUNNER_OS" = "Windows" ]; then DIR=dist/CutSensei; EXT=".exe"
+          else DIR=dist/CutSensei; EXT=""; fi
+          "$DIR/cutsensei-cli$EXT" info
+          "$DIR/cutsensei-cli$EXT" demo demo.mp4
+          "$DIR/cutsensei-cli$EXT" auto demo.mp4 -o demo_edited.mp4 --quality 0
+          test -s demo_edited.mp4
+          "$DIR/cutsensei-cli$EXT" demo notes.mp4 --scenario screen
+          "$DIR/cutsensei-cli$EXT" auto notes.mp4 -o notes_edited.mp4 --quality 0 | tee notes.log
+          grep -q "recording   : screen" notes.log
+          test -s notes_edited.mp4
+          "$DIR/CutSensei$EXT"
+          test -s "$CUTSENSEI_SMOKE_TEST"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: CutSensei-${{ matrix.name }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
