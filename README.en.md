@@ -3,7 +3,7 @@
 **Automatic editor for lecture videos** — explanations stay at normal speed, silent board
 writing is sped up, idle waiting time is cut.
 
-[日本語 README](README.md) · [How the detection works](docs/ALGORITHM.md) · [Contributing](CONTRIBUTING.md)
+[日本語 README](README.md) · [How the detection works](docs/ALGORITHM.md) · [Project file format](docs/PROJECT_FORMAT.md) · [Contributing](CONTRIBUTING.md)
 
 ![CutSensei main window](docs/images/main_en.png)
 
