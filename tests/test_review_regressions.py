@@ -203,3 +203,25 @@ def test_preview_restarts_when_seeking_is_slow(qtbot, short_video, lagging_playe
     eng.play()
     qtbot.wait(300)
     assert eng.playing and eng.position < 0.9
+
+
+@pytest.mark.slow
+def test_preview_reload_is_not_ready_before_the_new_media_is(qtbot, short_video):
+    """Re-opening a file: stop() reports "LoadedMedia" for the old media,
+    which used to mark the preview as ready while the file was still loading
+    (Play then ran against a loading player on slower machines)."""
+    from cutsensei.ui.preview import PreviewEngine
+
+    path, spec = short_video
+    eng = PreviewEngine()
+    eng.load(path, spec.duration, spec.fps)
+    qtbot.waitUntil(lambda: eng._loaded, timeout=15000)
+    eng.play()
+    qtbot.wait(300)
+    eng.pause()
+    eng.load(path, spec.duration, spec.fps)
+    assert not eng._loaded
+    qtbot.waitUntil(lambda: eng._loaded, timeout=15000)
+    eng.play()
+    qtbot.wait(300)
+    assert eng.playing and 0.0 < eng.position < 1.0

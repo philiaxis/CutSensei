@@ -116,24 +116,26 @@ class PreviewEngine(QObject):
     # ------------------------------------------------------------ setup
     def load(self, path: Optional[str], duration: float, fps: float) -> None:
         self.pause()
-        self._loaded = False
-        self._source = path
-        self._duration = duration
-        self._fps = fps if fps > 0 else 30.0
-        self._pos = 0.0
-        self._pending = None
         for slot in self._slots:
             slot.frame = None
             slot.frame_time = -1.0
             slot.preloaded = None
             slot.audio.setVolume(0.0)
             # setSource() ignores an unchanged URL; clear it first so that
-            # re-opening the same file loads it again (and signals LoadedMedia)
+            # re-opening the same file loads it again (and signals LoadedMedia).
+            # stop() itself reports "LoadedMedia" for the old media.
             slot.player.stop()
             slot.player.setSource(QUrl())
-            if path:
-                slot.player.setSource(QUrl.fromLocalFile(path))
+        self._loaded = False
+        self._source = path
+        self._duration = duration
+        self._fps = fps if fps > 0 else 30.0
+        self._pos = 0.0
+        self._pending = None
         self._active = 0
+        if path:
+            for slot in self._slots:
+                slot.player.setSource(QUrl.fromLocalFile(path))
 
     def unload(self) -> None:
         self.load(None, 0.0, 30.0)
@@ -453,13 +455,20 @@ class PreviewEngine(QObject):
             self.frameReady.emit(frame)
 
     def _on_status(self, slot: _Slot, status) -> None:
+        # a late signal about the previous media (e.g. from stop() while
+        # re-opening) must not count: check what the player reports now
+        loaded_now = slot.player.mediaStatus() in (
+            QMediaPlayer.LoadedMedia, QMediaPlayer.BufferingMedia, QMediaPlayer.BufferedMedia)
         if status == QMediaPlayer.LoadedMedia and slot.index == 0 and not self._loaded:
+            if not loaded_now or not self._source:
+                return
             self._loaded = True
             slot.player.pause()
             slot.player.setPosition(0)
             self.mediaLoaded.emit(True, "")
         elif status == QMediaPlayer.LoadedMedia and slot.index == 1:
-            slot.player.pause()
+            if loaded_now and not (slot is self.active and self._playing):
+                slot.player.pause()
         elif status == QMediaPlayer.EndOfMedia and slot is self.active and self._playing:
             self._pos = self._duration
             self._finish()
