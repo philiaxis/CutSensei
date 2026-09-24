@@ -3,6 +3,9 @@ name: Release builds
 on:
   push:
     tags: ["v*"]
+    paths:
+      - "packaging/**"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:
