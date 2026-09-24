@@ -2,7 +2,7 @@
 
 **講義動画向けの自動編集ソフト** — 説明中は等速、無言で板書している間は倍速、不要な待機はカット。
 
-[English README](README.en.md) ・ [判定アルゴリズムの解説](docs/ALGORITHM.md) ・ [プロジェクトファイルの形式](docs/PROJECT_FORMAT.md) ・ [開発に参加する](CONTRIBUTING.md)
+[English README](README.en.md) ・ [判定アルゴリズムの解説](docs/ALGORITHM.md) ・ [設計書との対応表](docs/SPEC_COVERAGE.md) ・ [プロジェクトファイルの形式](docs/PROJECT_FORMAT.md) ・ [開発に参加する](CONTRIBUTING.md)
 
 ![CutSensei のメイン画面](docs/images/main_ja.png)
 
