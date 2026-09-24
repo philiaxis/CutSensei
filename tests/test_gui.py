@@ -303,3 +303,24 @@ def test_play_around_returns_to_playhead(qtbot, short_video):
     assert eng.mode == "source"
     qtbot.waitUntil(lambda: not eng.playing, timeout=5000)
     assert eng.mode == "edited"
+
+
+@pytest.mark.slow
+def test_set_edges_to_playhead(window, qtbot, short_video):
+    tv = _timeline_window(window, qtbot, short_video)
+    window.ctrl.select_index(1)            # writing segment 5-10
+    window.engine.seek(6.0)
+    window.a_set_start.trigger()
+    assert window.ctrl.timeline[1].start == pytest.approx(6.0, abs=0.01)
+    assert window.ctrl.timeline[0].end == pytest.approx(6.0, abs=0.01)
+    window.engine.seek(9.0)
+    window.ctrl.select_index(1)
+    window.a_set_end.trigger()
+    assert window.ctrl.timeline[1].end == pytest.approx(9.0, abs=0.01)
+    window.a_undo.trigger()
+    assert window.ctrl.timeline[1].end == pytest.approx(10.0, abs=0.01)
+    # V toggles the preview / timeline mode
+    window.a_toggle_mode.trigger()
+    assert window.engine.mode == "source" and tv.mode == "source"
+    window.a_toggle_mode.trigger()
+    assert window.engine.mode == "edited"
