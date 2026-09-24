@@ -76,7 +76,15 @@ exe = EXE(
     icon=icon,
     upx=False,
 )
-coll = COLLECT(exe, a.binaries, a.datas, name="CutSensei", upx=False)
+cli = EXE(
+    pyz, a.scripts, [],
+    exclude_binaries=True,
+    name="cutsensei-cli",
+    console=True,
+    icon=icon,
+    upx=False,
+)
+coll = COLLECT(exe, cli, a.binaries, a.datas, name="CutSensei", upx=False)
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,

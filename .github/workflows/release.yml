@@ -55,11 +55,14 @@ jobs:
           CUTSENSEI_SMOKE_TEST: ${{ github.workspace }}/smoke.png
           CUTSENSEI_SETTINGS: ${{ github.workspace }}/smoke.ini
         run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then APP=dist/CutSensei.app/Contents/MacOS/CutSensei
-          elif [ "$RUNNER_OS" = "Windows" ]; then APP=dist/CutSensei/CutSensei.exe
-          else APP=dist/CutSensei/CutSensei; fi
-          "$APP" --cli info || true
-          "$APP"
+          if [ "$RUNNER_OS" = "macOS" ]; then DIR=dist/CutSensei.app/Contents/MacOS; EXT=""
+          elif [ "$RUNNER_OS" = "Windows" ]; then DIR=dist/CutSensei; EXT=".exe"
+          else DIR=dist/CutSensei; EXT=""; fi
+          "$DIR/cutsensei-cli$EXT" info
+          "$DIR/cutsensei-cli$EXT" demo demo.mp4
+          "$DIR/cutsensei-cli$EXT" auto demo.mp4 -o demo_edited.mp4 --quality 0
+          test -s demo_edited.mp4
+          "$DIR/CutSensei$EXT"
           test -s "$CUTSENSEI_SMOKE_TEST"
 
       - uses: actions/upload-artifact@v4
