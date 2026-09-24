@@ -125,6 +125,7 @@ def test_very_short_video(tmp_path):
 
 
 def test_many_segments(tmp_path):
+    """Hundreds of segments (a long lecture) must not break the filter graph."""
     src = make_video(tmp_path / "many.mp4", "-f", "lavfi", "-i", "sine=duration=20",
                      "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest",
                      duration=20)
@@ -132,8 +133,8 @@ def test_many_segments(tmp_path):
     segs = []
     t = 0.0
     i = 0
-    while t < media.duration - 0.1:
-        end = min(media.duration, t + 0.1)
+    while t < media.duration - 0.05:
+        end = min(media.duration, t + 0.05)
         action = (Action.KEEP, Action.SPEED, Action.CUT)[i % 3]
         segs.append(Segment(t, end, Kind.SPEECH, action))
         t = end

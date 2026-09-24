@@ -76,11 +76,15 @@ class Project:
             "analysis": self.analysis.to_b64() if self.analysis is not None else None,
         }
 
-    def save(self, path: str) -> None:
+    def save(self, path: str, as_copy: bool = False) -> None:
+        """Write the project.  ``as_copy`` (autosave) leaves ``path`` and the
+        modified flag untouched."""
         path = str(path)
         if not path.endswith(PROJECT_EXTENSION):
             path += PROJECT_EXTENSION
         data = self.to_dict(path)
+        if as_copy:
+            data["autosave_of"] = self.path
         directory = os.path.dirname(os.path.abspath(path))
         os.makedirs(directory, exist_ok=True)
         # write atomically so a crash never leaves a truncated project
@@ -95,8 +99,9 @@ class Project:
             except OSError:
                 pass
             raise
-        self.path = path
-        self.dirty = False
+        if not as_copy:
+            self.path = path
+            self.dirty = False
 
     @classmethod
     def load(cls, path: str, media_override: Optional[str] = None) -> "Project":

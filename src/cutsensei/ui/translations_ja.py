@@ -287,6 +287,8 @@ STRINGS = {
     "Uncertainty band": "確認対象にする幅",
     "Undo": "元に戻す",
     "Undo / redo": "元に戻す / やり直す",
+    "Unsaved edits of this video were recovered from an automatic backup. Restore them?":
+        "この動画の保存されていない編集内容が自動バックアップから見つかりました。復元しますか？",
     "Use \"Import\" or drop a video file here.": "「読み込み」を使うか、動画ファイルをここにドロップしてください。",
     "Use GPU for decoding (faster, if supported)": "デコードにGPUを使う（対応環境で高速）",
     "Use GPU video decoding for analysis": "解析時の映像デコードにGPUを使う",

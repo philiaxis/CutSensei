@@ -18,6 +18,7 @@ from ..analysis.result import regions_signature
 from ..analysis.thumbnails import generate_thumbnails, thumbnail_info
 from ..core.errors import CutSenseiError
 from ..core.media import VIDEO_EXTENSIONS, probe
+from ..core.paths import autosave_path
 from ..core.project import PROJECT_EXTENSION, Project
 from ..core.settings import AutoEditSettings, VadEngine
 from ..core.timeline import Action
@@ -58,6 +59,10 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._stop_threads)
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setInterval(90_000)
+        self._autosave_timer.timeout.connect(self._autosave)
+        self._autosave_timer.start()
 
     # ================================================================== UI
     def _build_actions(self) -> None:
@@ -345,6 +350,7 @@ class MainWindow(QMainWindow):
         if not self._maybe_save():
             event.ignore()
             return
+        self._discard_autosave()
         self.engine.pause()
         self._stop_threads()
         self.qs.setValue("geometry", self.saveGeometry())
@@ -545,6 +551,7 @@ class MainWindow(QMainWindow):
             return False
         if r == QMessageBox.Save:
             return self.save_project()
+        self._discard_autosave()   # the user chose to throw the changes away
         return True
 
     def _last_dir(self) -> str:
@@ -570,7 +577,10 @@ class MainWindow(QMainWindow):
         QApplication.restoreOverrideCursor()
         project = Project(media)
         project.settings = self._default_settings()
+        project = self._offer_recovery(project)
         self._set_project(project)
+        if project.dirty:
+            self.ctrl.mark_dirty()
         self.statusBar().showMessage(
             tr("Loaded {f}. Mark the board region if needed, then press \"Auto edit\".")
             .format(f=os.path.basename(path)), 12000)
@@ -626,9 +636,58 @@ class MainWindow(QMainWindow):
             project.dirty = True
         self.qs.setValue("last_dir", os.path.dirname(path))
         self._add_recent(path)
+        project = self._offer_recovery(project)
         self._set_project(project)
         if project.dirty:
             self.ctrl.mark_dirty()
+
+    # ================================================================== autosave
+    def _autosave_file(self, project: Project) -> str:
+        return str(autosave_path(project.media.fingerprint()))
+
+    def _autosave(self) -> None:
+        p = self.ctrl.project
+        if p is None or not p.dirty or self._busy:
+            return
+        try:
+            p.save(self._autosave_file(p), as_copy=True)
+        except OSError:
+            pass
+
+    def _discard_autosave(self) -> None:
+        p = self.ctrl.project
+        if p is not None:
+            try:
+                os.unlink(self._autosave_file(p))
+            except OSError:
+                pass
+
+    def _offer_recovery(self, project: Project) -> Project:
+        auto = self._autosave_file(project)
+        if not os.path.isfile(auto):
+            return project
+        newer = project.path is None or not os.path.isfile(project.path) or \
+            os.path.getmtime(auto) > os.path.getmtime(project.path)
+        if newer:
+            r = QMessageBox.question(
+                self, APP_NAME,
+                tr("Unsaved edits of this video were recovered from an automatic backup. "
+                   "Restore them?"), QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+            if r == QMessageBox.Yes:
+                try:
+                    rec = Project.load(auto, media_override=project.media.path)
+                except (CutSenseiError, OSError, ValueError, KeyError):
+                    return project
+                rec.path = project.path
+                rec.name = project.name
+                rec.media = project.media
+                rec.dirty = True
+                return rec
+        try:
+            os.unlink(auto)
+        except OSError:
+            pass
+        return project
 
     def _set_project(self, project: Optional[Project]) -> None:
         self.engine.pause()
@@ -691,6 +750,7 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             self._error(tr("Save"), tr("The project could not be saved."), str(exc))
             return False
+        self._discard_autosave()
         self.ctrl.mark_saved()
         self._remember_settings()
         self.statusBar().showMessage(tr("Saved {p}").format(p=p.path), 5000)
@@ -717,6 +777,7 @@ class MainWindow(QMainWindow):
 
     def close_project(self) -> None:
         if self._maybe_save():
+            self._discard_autosave()
             self._set_project(None)
 
     def _add_recent(self, path: str) -> None:

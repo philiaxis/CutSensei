@@ -33,3 +33,9 @@ def thumbnails_dir(fingerprint: str) -> Path:
 def resource_path(*parts: str) -> Path:
     """Path of a file shipped inside the package (works when frozen)."""
     return Path(__file__).resolve().parent.parent.joinpath(*parts)
+
+
+def autosave_path(fingerprint: str) -> Path:
+    path = cache_dir() / "autosave"
+    path.mkdir(parents=True, exist_ok=True)
+    return path / f"{fingerprint}.cutsensei"

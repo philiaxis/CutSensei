@@ -59,6 +59,22 @@ def _num(v: float) -> str:
     return "0" if text in ("", "-0") else text
 
 
+def _balanced_sum(terms: List[str]) -> str:
+    """``a+b+c+...`` as a balanced tree of parentheses.
+
+    Recent FFmpeg versions limit the nesting depth of expressions (a flat sum
+    of ~100 terms is rejected), a balanced tree only needs log2(n) levels.
+    """
+    if not terms:
+        return "0"
+    while len(terms) > 1:
+        paired = [f"({terms[i]}+{terms[i + 1]})" for i in range(0, len(terms) - 1, 2)]
+        if len(terms) % 2:
+            paired.append(terms[-1])
+        terms = paired
+    return terms[0]
+
+
 def build_video_filter(edit: EditMap, out_fps: str, out_size: Optional[Tuple[int, int]],
                        frame_eps: float) -> str:
     ranges = _merge_for_video(edit)
@@ -77,8 +93,8 @@ def build_video_filter(edit: EditMap, out_fps: str, out_size: Optional[Tuple[int
         else:
             mapped = f"({_num(o)}+(T-{_num(a)})/{_num(s)})"
         pts_terms.append(f"gte(T,{_num(a_s)})*lt(T,{_num(b)})*{mapped}")
-    select = "+".join(sel_terms)
-    setpts = "+".join(pts_terms)
+    select = _balanced_sum(sel_terms)
+    setpts = _balanced_sum(pts_terms)
     chain = [f"select='{select}'", f"setpts='max(0,{setpts})/TB'",
              f"fps=fps={out_fps}"]
     if out_size is not None:

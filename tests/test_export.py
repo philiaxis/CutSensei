@@ -79,6 +79,19 @@ def sync_timeline():
     return tl, st
 
 
+def test_filter_expression_depth_is_logarithmic():
+    from cutsensei.render.exporter import _balanced_sum
+
+    expr = _balanced_sum([f"x{i}" for i in range(1000)])
+    depth = max_depth = 0
+    for ch in expr:
+        depth += ch == "("
+        depth -= ch == ")"
+        max_depth = max(max_depth, depth)
+    assert max_depth <= 11
+    assert expr.count("x") == 1000
+
+
 def test_filter_graph_is_well_formed():
     tl, st = sync_timeline()
     graph = build_video_filter(tl.build_map(st), "30/1", None, 1 / 60)

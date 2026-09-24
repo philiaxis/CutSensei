@@ -252,3 +252,30 @@ def test_timeline_click_select_zoom_and_properties(window, qtbot, short_video):
     # clicking the ruler seeks
     qtbot.mouseClick(tv, Qt.LeftButton, pos=QPoint(int(tv.x_of(tv.to_disp(3.0))), 8))
     assert window.engine.position == pytest.approx(3.0, abs=0.2)
+
+
+@pytest.mark.slow
+def test_autosave_recovery(window, qtbot, short_video, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from cutsensei.core.timeline import Action
+
+    path, _spec = short_video
+    window.import_video(path)
+    window.ctrl.select_index(0)
+    window.ctrl.set_action(Action.CUT)
+    assert window.ctrl.project.dirty
+    window._autosave()
+    auto = window._autosave_file(window.ctrl.project)
+    assert os.path.isfile(auto)
+    # simulate a crash: forget the project without the save question
+    window.ctrl.project.dirty = False
+    window.ctrl.set_project(None)
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
+    window.import_video(path)
+    assert window.ctrl.project.dirty
+    assert window.ctrl.timeline[0].action == Action.CUT
+    # saving removes the backup
+    window.ctrl.project.path = str(os.path.join(os.path.dirname(auto), "..", "rec.cutsensei"))
+    assert window.save_project()
+    assert not os.path.isfile(auto)
