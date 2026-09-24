@@ -14,8 +14,8 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
-from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 from ..core import ffmpeg
 from ..core.errors import Cancelled, CutSenseiError, FFmpegError

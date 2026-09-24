@@ -13,7 +13,7 @@ from __future__ import annotations
 import math
 import subprocess
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 

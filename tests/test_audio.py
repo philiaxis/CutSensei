@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from cutsensei.analysis.audio import (FEATURE_RATE, SR, AudioFeatures, _StreamingDsp,
+from cutsensei.analysis.audio import (SR, AudioFeatures, _StreamingDsp,
                                       detect_clicks, summarize)
 from cutsensei.demo import _chalk, _speech
 from cutsensei.render.audio_render import wsola

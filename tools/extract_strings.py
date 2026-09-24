@@ -1,4 +1,4 @@
-import ast, pathlib, json, sys
+import ast, pathlib, json
 strings = {}
 def add(s, where):
     strings.setdefault(s, where)

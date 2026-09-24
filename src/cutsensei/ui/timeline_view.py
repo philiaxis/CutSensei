@@ -13,9 +13,8 @@ from collections import OrderedDict
 from typing import List, Optional, Tuple
 
 import numpy as np
-from PySide6.QtCore import QLineF, QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import (QBrush, QColor, QCursor, QFont, QImage, QPainter, QPainterPath,
-                           QPen, QPixmap, QPolygonF)
+from PySide6.QtCore import QLineF, QPoint, QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import (QBrush, QColor, QFont, QImage, QPainter, QPen, QPixmap, QPolygonF)
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QScrollBar, QSizePolicy, QSlider,
                                QToolButton, QVBoxLayout, QWidget)
 

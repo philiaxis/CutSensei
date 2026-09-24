@@ -35,7 +35,7 @@ dependencies = [
 
 [project.optional-dependencies]
 gpu = ["onnxruntime-gpu>=1.16"]
-dev = ["pytest>=7", "pytest-qt>=4.2", "pyinstaller>=6.3"]
+dev = ["pytest>=7", "pytest-qt>=4.2", "pyinstaller>=6.3", "ruff>=0.6"]
 
 [project.urls]
 Homepage = "https://github.com/philiaxis/CutSensei"
@@ -62,3 +62,11 @@ markers = [
     "slow: end-to-end tests that encode video (deselect with -m 'not slow')",
     "gui: tests that need a Qt platform",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["F", "E9", "B"]
+ignore = ["B007", "B008", "B023", "B905"]

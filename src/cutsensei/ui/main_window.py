@@ -23,7 +23,7 @@ from ..core.project import PROJECT_EXTENSION, Project
 from ..core.settings import AutoEditSettings, VadEngine
 from ..core.timeline import Action
 from ..render.exporter import export_video
-from . import icons, theme
+from . import icons
 from .controller import ProjectController
 from .dialogs import (BoardRegionDialog, ExportDialog, PreferencesDialog, show_about,
                       show_shortcuts)

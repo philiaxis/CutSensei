@@ -5,19 +5,19 @@ from __future__ import annotations
 import os
 from typing import Callable, List, Optional
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComboBox,
                                QDoubleSpinBox, QFormLayout, QFrame, QGridLayout, QHBoxLayout,
                                QHeaderView, QLabel, QPushButton, QScrollArea, QSizePolicy,
-                               QSlider, QSpinBox, QStackedWidget, QTabWidget, QToolButton,
+                               QSlider, QSpinBox, QTabWidget, QToolButton,
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ..analysis.thumbnails import thumbnail_path
 from ..core.settings import AutoEditSettings, SpeedAudio, VadEngine
-from ..core.timeline import Action, Kind
+from ..core.timeline import Action
 from . import icons, theme
-from .fmt import (action_label, fmt_duration, fmt_speed, fmt_time, kind_label, reason_label)
+from .fmt import (action_label, fmt_duration, fmt_time, kind_label, reason_label)
 from .i18n import tr
 
 

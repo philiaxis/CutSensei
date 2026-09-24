@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from PySide6.QtCore import QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen
+from PySide6.QtCore import QObject, QRectF, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame, QVideoSink
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QSizePolicy, QSlider, QToolButton,
                                QVBoxLayout, QWidget)
 
-from ..core.timeline import Action, EditMap, Kind, Timeline
+from ..core.timeline import Action, EditMap, Timeline
 from . import icons, theme
 from .fmt import fmt_speed, fmt_time, kind_label
 from .i18n import tr

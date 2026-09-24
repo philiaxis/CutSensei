@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 from typing import List, Optional
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QImage, QKeySequence, QPainter, QPen
+from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
                                QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
-                               QPushButton, QSlider, QTextBrowser, QVBoxLayout, QWidget)
+                               QPushButton, QSlider, QVBoxLayout, QWidget)
 
 from .. import __version__
 from ..core import ffmpeg
@@ -19,7 +18,7 @@ from ..core.media import MediaInfo
 from ..core.settings import Encoder, ExportSettings
 from ..render.exporter import FPS_PRESETS, RESOLUTION_PRESETS
 from . import icons, theme
-from .fmt import fmt_duration, fmt_time
+from .fmt import fmt_time
 from .i18n import SUPPORTED, tr
 
 

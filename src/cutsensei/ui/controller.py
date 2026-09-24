@@ -6,7 +6,7 @@ the "modified" flag and the views stay consistent.
 
 from __future__ import annotations
 
-from typing import Iterable, List, Optional, Sequence, Set
+from typing import Iterable, List, Optional, Sequence
 
 from PySide6.QtCore import QObject, Signal
 
