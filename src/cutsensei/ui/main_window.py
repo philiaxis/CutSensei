@@ -119,6 +119,8 @@ class MainWindow(QMainWindow):
                                  lambda: self.goto_review(1))
         self.a_around = act("Play around the playhead", "loop", "A", self.play_around)
         self.a_toggle_mode = act("Switch edited / original", None, "Tab", self._toggle_mode)
+        self.a_auto_around = act("Play around automatically after jumping", None, None,
+                                 self._auto_around_toggled, checkable=True)
         # editing
         self.a_split = act("Split at playhead", "split", "S", self.split_at_playhead)
         self.a_keep = act("Normal speed", "keep", "1", lambda: self.ctrl.set_action(Action.KEEP))
@@ -265,6 +267,8 @@ class MainWindow(QMainWindow):
                   self.a_prev_mark, self.a_next_mark, self.a_prev_review, self.a_next_review,
                   self.a_around, self.a_home, self.a_end, self.a_toggle_mode):
             m.addAction(a)
+        m.addSeparator()
+        m.addAction(self.a_auto_around)
         m = mb.addMenu(tr("&View"))
         for a in (self.a_zoom_in, self.a_zoom_out, self.a_zoom_fit):
             m.addAction(a)
@@ -344,6 +348,8 @@ class MainWindow(QMainWindow):
                 right = 330 if w < 1500 else 360
                 self.hsplit.setSizes([side, w - side - right, right])
         self._sync_panel_actions()
+        self.a_auto_around.setChecked(
+            str(self.qs.value("auto_play_around", "true")).lower() == "true")
         QTimer.singleShot(0, self._detect_gpu)
 
     def closeEvent(self, event) -> None:
@@ -975,6 +981,13 @@ class MainWindow(QMainWindow):
             return sorted({pc.src_start for pc in m.pieces} | {pc.src_end for pc in m.pieces})
         return sorted({s.start for s in tl} | {tl.duration})
 
+    def _auto_around_toggled(self, on: bool) -> None:
+        self.qs.setValue("auto_play_around", "true" if on else "false")
+
+    def _after_jump(self) -> None:
+        if self.a_auto_around.isChecked():
+            self.play_around()
+
     def goto_boundary(self, direction: int) -> None:
         marks = self._marks()
         t = self.engine.position
@@ -983,11 +996,13 @@ class MainWindow(QMainWindow):
             if nxt:
                 self.engine.pause()
                 self.engine.seek(nxt[0])
+                self._after_jump()
         else:
             prv = [x for x in marks if x < t - 0.05]
             if prv:
                 self.engine.pause()
                 self.engine.seek(prv[-1])
+                self._after_jump()
 
     def goto_review(self, direction: int) -> None:
         tl = self.ctrl.timeline
@@ -1007,6 +1022,7 @@ class MainWindow(QMainWindow):
         self.engine.pause()
         self.ctrl.select([seg.id])
         self.engine.seek(seg.start)
+        self._after_jump()
 
     def play_around(self) -> None:
         m = self.ctrl.edit_map()
@@ -1017,9 +1033,9 @@ class MainWindow(QMainWindow):
             o = m.src_to_out(t)
             a = m.out_to_src(max(0.0, o - 2.0))
             b = m.out_to_src(min(m.out_duration, o + 2.0))
-            self.engine.play_range(a, b)
+            self.engine.play_range(a, b, return_to=t)
         else:
-            self.engine.play_range(max(0.0, t - 2.0), t + 2.0)
+            self.engine.play_range(max(0.0, t - 2.0), t + 2.0, return_to=t)
 
     def _play_range(self, start: float, end: float, mode: str) -> None:
         if mode == "source" and self.engine.mode == EDITED:

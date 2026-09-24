@@ -178,6 +178,7 @@ STRINGS = {
     "Play / pause": "再生 / 停止",
     "Play / pause (Space)": "再生 / 停止 (Space)",
     "Play around": "前後を再生",
+    "Play around automatically after jumping": "移動したら前後を自動で再生",
     "Play around the playhead": "再生位置の前後を再生",
     "Play around the playhead (A)": "再生位置の前後を再生 (A)",
     "Play original": "元の映像を再生",

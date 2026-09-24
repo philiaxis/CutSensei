@@ -279,3 +279,27 @@ def test_autosave_recovery(window, qtbot, short_video, monkeypatch):
     window.ctrl.project.path = str(os.path.join(os.path.dirname(auto), "..", "rec.cutsensei"))
     assert window.save_project()
     assert not os.path.isfile(auto)
+
+
+@pytest.mark.slow
+def test_play_around_returns_to_playhead(qtbot, short_video):
+    from cutsensei.core.settings import AutoEditSettings
+    from cutsensei.core.timeline import Timeline
+    from cutsensei.ui.preview import PreviewEngine
+
+    path, spec = short_video
+    eng = PreviewEngine()
+    eng.load(path, spec.duration, spec.fps)
+    qtbot.waitUntil(lambda: eng._loaded, timeout=15000)
+    tl = Timeline(spec.duration)
+    eng.set_edit(tl, tl.build_map(AutoEditSettings()))
+    eng.seek(5.0)
+    eng.play_range(4.5, 5.5, return_to=5.0)
+    assert eng.playing
+    qtbot.waitUntil(lambda: not eng.playing, timeout=5000)
+    assert eng.position == pytest.approx(5.0, abs=0.01)
+    # source-mode range from the edited preview restores the mode afterwards
+    eng.play_range(1.0, 1.4, mode="source")
+    assert eng.mode == "source"
+    qtbot.waitUntil(lambda: not eng.playing, timeout=5000)
+    assert eng.mode == "edited"

@@ -72,6 +72,7 @@ class PreviewEngine(QObject):
         self._volume = 0.8
         self._muted = False
         self._stop_at: Optional[float] = None
+        self._return_to: Optional[float] = None
         self._restore_mode: Optional[str] = None
         self._loaded = False
         self._source: Optional[str] = None
@@ -197,6 +198,7 @@ class PreviewEngine(QObject):
             self._mode = self._restore_mode
             self._restore_mode = None
         self._stop_at = None
+        self._return_to = None
         if was:
             self.playingChanged.emit(False)
 
@@ -232,21 +234,25 @@ class PreviewEngine(QObject):
                     t = prev[-1].src_end - 1.0 / self._fps if prev else self._pos
         self._seek_active(t)
 
-    def play_range(self, start: float, end: float, mode: Optional[str] = None) -> None:
-        """Play ``[start, end)`` (source time) and pause at the end."""
+    def play_range(self, start: float, end: float, mode: Optional[str] = None,
+                   return_to: Optional[float] = None) -> None:
+        """Play ``[start, end)`` (source time) and pause at the end.
+
+        ``mode`` temporarily switches edited/original preview; ``return_to``
+        moves the playhead back there afterwards (used by "play around").
+        """
         if not self._loaded:
             return
         self.pause()
+        restore = None
         if mode is not None and mode != self._mode:
-            prev = self._mode
+            restore = self._mode
             self._mode = mode
-            self._restore_after = prev
-        else:
-            self._restore_after = None
         self._seek_active(start)
         self.play()
         self._stop_at = end
-        self._restore_mode = self._restore_after
+        self._return_to = return_to
+        self._restore_mode = restore
 
     # ------------------------------------------------------------ internals
     def _seek_active(self, t: float) -> None:
@@ -349,9 +355,10 @@ class PreviewEngine(QObject):
             t = max(t, slot.frame_time)
         self._pos = t
         if self._stop_at is not None and t >= self._stop_at:
-            stop = self._stop_at
+            target = self._return_to if self._return_to is not None else \
+                min(self._stop_at, self._duration)
             self.pause()
-            self._seek_active(min(stop, self._duration))
+            self._seek_active(target)
             return
         if self._mode == EDITED and self._map is not None and self._map.pieces:
             pieces = self._map.pieces
