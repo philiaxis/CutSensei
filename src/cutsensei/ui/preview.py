@@ -617,9 +617,9 @@ class TransportBar(QWidget):
         self.next_review.setToolTip(tr("Next item to check (N)"))
         self.around.setToolTip(tr("Play around the playhead (A)"))
         self.mode_edited.setText(tr("Edited"))
-        self.mode_edited.setToolTip(tr("Preview with cuts and speed changes (Tab)"))
+        self.mode_edited.setToolTip(tr("Preview with cuts and speed changes (V)"))
         self.mode_source.setText(tr("Original"))
-        self.mode_source.setToolTip(tr("Preview the unedited source video (Tab)"))
+        self.mode_source.setToolTip(tr("Preview the unedited source video (V)"))
         self.mute.setToolTip(tr("Mute"))
         self.volume.setToolTip(tr("Preview volume"))
 

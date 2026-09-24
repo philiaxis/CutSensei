@@ -118,7 +118,7 @@ class MainWindow(QMainWindow):
         self.a_next_review = act("Next item to check", "next_review", "N",
                                  lambda: self.goto_review(1))
         self.a_around = act("Play around the playhead", "loop", "A", self.play_around)
-        self.a_toggle_mode = act("Switch edited / original", None, "Tab", self._toggle_mode)
+        self.a_toggle_mode = act("Switch edited / original", None, "V", self._toggle_mode)
         self.a_auto_around = act("Play around automatically after jumping", None, None,
                                  self._auto_around_toggled, checkable=True)
         # editing

@@ -119,7 +119,7 @@ red cut marker sideways to bring back removed material.
 | ↑ / ↓ | previous / next boundary | R | restore deleted segment |
 | N / Shift+N | next / previous item to check | P | always keep (protect) |
 | A | play around the playhead | C | mark as checked |
-| [ / ] | set segment start / end to playhead | Tab | edited / original preview |
+| [ / ] | set segment start / end to playhead | V | edited / original preview |
 | + / - / 0 | zoom in / out / fit | Ctrl+A | select all segments |
 | Ctrl+Z / Ctrl+Shift+Z | undo / redo | Ctrl+S / Ctrl+O | save / open |
 | Ctrl+R | auto edit | Ctrl+E | export |

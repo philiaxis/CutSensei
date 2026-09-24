@@ -548,7 +548,7 @@ SHORTCUTS = [
     ("R", "Restore deleted segment"),
     ("P", "Always keep (protect)"),
     ("C", "Mark as checked"),
-    ("Tab", "Switch preview: edited / original"),
+    ("V", "Switch preview: edited / original"),
     ("+ / - / 0", "Zoom in / out / fit"),
     ("Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"),
     ("Ctrl+I", "Import video"),
