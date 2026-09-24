@@ -8,7 +8,8 @@ adjacent parts only change the playback rate of the active player.
 
 from __future__ import annotations
 
-from typing import List, Optional
+import time
+from typing import List, Optional, Tuple
 
 from PySide6.QtCore import QObject, QRectF, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath
@@ -23,6 +24,7 @@ from .i18n import tr
 
 EDITED = "edited"
 SOURCE = "source"
+SEEK_TIMEOUT_S = 2.0   # give up waiting for a seek to show up in position()
 
 
 class _Slot:
@@ -76,6 +78,8 @@ class PreviewEngine(QObject):
         self._restore_mode: Optional[str] = None
         self._loaded = False
         self._source: Optional[str] = None
+        # (target, monotonic time) of a seek the player may not have finished
+        self._pending: Optional[Tuple[float, float]] = None
         self._timer = QTimer(self)
         self._timer.setInterval(15)
         self._timer.timeout.connect(self._tick)
@@ -117,6 +121,7 @@ class PreviewEngine(QObject):
         self._duration = duration
         self._fps = fps if fps > 0 else 30.0
         self._pos = 0.0
+        self._pending = None
         for slot in self._slots:
             slot.frame = None
             slot.frame_time = -1.0
@@ -276,6 +281,7 @@ class PreviewEngine(QObject):
     def _seek_active(self, t: float) -> None:
         self._pos = t
         self.active.player.setPosition(int(round(t * 1000)))
+        self._pending = (t, time.monotonic())
         self.positionChanged.emit(t)
 
     def _piece_for(self, t: float):
@@ -357,6 +363,7 @@ class PreviewEngine(QObject):
             self.active.player.setPosition(int(round(target * 1000)))
             self._pos = target
             self._apply_current(force=True)
+        self._pending = (target, time.monotonic())
         self._preload_next()
 
     def _finish(self) -> None:
@@ -376,9 +383,28 @@ class PreviewEngine(QObject):
             return
         slot = self.active
         t = slot.player.position() / 1000.0
+        ft = slot.frame_time
         # position() may lag behind right after a switch
-        if slot.frame_time >= 0 and abs(slot.frame_time - t) < 0.25:
-            t = max(t, slot.frame_time)
+        if ft >= 0 and abs(ft - t) < 0.25:
+            t = max(t, ft)
+        if self._pending is not None:
+            # After setPosition() the player keeps reporting the old time for a
+            # moment (much longer on a busy machine).  Acting on that stale time
+            # would seek again and again (and never get anywhere) or end the
+            # playback, so wait until the player has arrived at the target.
+            target, since = self._pending
+            elapsed = time.monotonic() - since
+            reach = 0.3 + elapsed * max(1.0, slot.rate) * 1.5
+            if target - 0.3 <= t <= target + reach:
+                self._pending = None                 # position() caught up
+            elif ft >= 0 and target - 0.3 <= ft <= target + reach:
+                t = ft                               # frames are there already
+            elif elapsed <= SEEK_TIMEOUT_S:
+                self._pos = target
+                self.positionChanged.emit(target)
+                return
+            else:
+                self._pending = None
         self._pos = t
         if self._stop_at is not None and t >= self._stop_at:
             target = self._return_to if self._return_to is not None else \

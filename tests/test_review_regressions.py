@@ -131,3 +131,75 @@ def test_preview_reload_same_file_and_restart_after_end(qtbot, short_video):
     eng.play_range(0.8, 1.23, return_to=1.0)
     qtbot.waitUntil(lambda: not eng.playing, timeout=5000)
     assert eng.position == pytest.approx(1.0, abs=0.01)
+
+
+@pytest.fixture
+def lagging_players(monkeypatch):
+    """QMediaPlayer.position() keeps reporting the old time for 400 ms after
+    each seek, like on a busy machine (seen on the macOS CI runners)."""
+    import time
+
+    from PySide6.QtMultimedia import QMediaPlayer
+
+    real_pos, real_set = QMediaPlayer.position, QMediaPlayer.setPosition
+    state = {}
+
+    def position(self):
+        old = state.get(id(self))
+        if old is not None and time.monotonic() - old[1] < 0.4:
+            return old[0]
+        return real_pos(self)
+
+    def set_position(self, ms):
+        # a new seek before the previous one finished keeps the stale value
+        state[id(self)] = (position(self), time.monotonic())
+        real_set(self, ms)
+
+    monkeypatch.setattr(QMediaPlayer, "setPosition", set_position)
+    monkeypatch.setattr(QMediaPlayer, "position", position)
+
+
+def _engine(qtbot, short_video, segments):
+    from cutsensei.core.settings import AutoEditSettings
+    from cutsensei.ui.preview import PreviewEngine
+
+    path, spec = short_video
+    eng = PreviewEngine()
+    eng.load(path, spec.duration, spec.fps)
+    qtbot.waitUntil(lambda: eng._loaded, timeout=15000)
+    tl = Timeline(spec.duration, segments)
+    eng.set_edit(tl, tl.build_map(AutoEditSettings()))
+    return eng
+
+
+@pytest.mark.slow
+def test_preview_skips_cut_when_seeking_is_slow(qtbot, short_video, lagging_players):
+    """A stale position() right after jumping over a cut used to trigger the
+    jump again on every tick, so the seek never finished (stuck at 6.0 s)."""
+    _path, spec = short_video
+    eng = _engine(qtbot, short_video, [Segment(0, 1.0, Kind.SPEECH, Action.KEEP),
+                                       Segment(1.0, 6.0, Kind.IDLE, Action.CUT),
+                                       Segment(6.0, spec.duration, Kind.SPEECH, Action.KEEP)])
+    # the standby player never shows its frame in time: every jump has to seek
+    on_frame = eng._on_frame
+    eng._on_frame = lambda slot, frame: None if slot.index == 1 else on_frame(slot, frame)
+    eng.seek(0.0)
+    eng.play()
+    qtbot.wait(2600)
+    eng.pause()
+    assert eng.position > 6.3
+
+
+@pytest.mark.slow
+def test_preview_restarts_when_seeking_is_slow(qtbot, short_video, lagging_players):
+    """A stale position() at the end of the edit used to stop the playback
+    that Play had just restarted from the beginning."""
+    _path, spec = short_video
+    eng = _engine(qtbot, short_video, [Segment(0, 1.23, Kind.SPEECH, Action.KEEP),
+                                       Segment(1.23, spec.duration, Kind.IDLE, Action.CUT)])
+    eng.seek(0.8)
+    eng.play()
+    qtbot.waitUntil(lambda: not eng.playing, timeout=5000)
+    eng.play()
+    qtbot.wait(300)
+    assert eng.playing and eng.position < 0.9
