@@ -441,7 +441,9 @@ class ExportDialog(QDialog):
         if not path.lower().endswith(".mp4"):
             path += ".mp4"
             self.path.setText(path)
-        if os.path.abspath(path) == os.path.abspath(self.media.path):
+        from ..render.exporter import same_file
+
+        if same_file(path, self.media.path):
             QMessageBox.warning(self, tr("Export"), tr("The source video cannot be overwritten."))
             return
         if os.path.exists(path):

@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
+import tempfile
 from typing import Optional
 
 from ..core import ffmpeg
+from ..core.errors import FFmpegError
 from ..core.jobs import CancelToken
 from ..core.media import MediaInfo
 from ..core.paths import thumbnails_dir
@@ -57,23 +60,27 @@ def generate_thumbnails(media: MediaInfo, cancel: Optional[CancelToken] = None) 
             args += ["-skip_frame", "nokey"]
         args += ["-i", media.path, "-an", "-sn", "-dn", "-vf", vf, "-q:v", "6",
                  "-start_number", "0", "-f", "image2", os.path.join(d, "t_%06d.jpg")]
-        proc = ffmpeg.popen(args, stdout=ffmpeg.subprocess.DEVNULL,
-                            stderr=ffmpeg.subprocess.PIPE, stdin=ffmpeg.subprocess.DEVNULL)
-        while True:
-            try:
-                proc.wait(timeout=0.2)
-                break
-            except ffmpeg.subprocess.TimeoutExpired:
-                if cancel is not None and cancel.cancelled:
-                    ffmpeg.terminate(proc)
-                    cancel.check()
-        if proc.returncode != 0:
-            err = proc.stderr.read().decode("utf-8", "replace") if proc.stderr else ""
-            raise ffmpeg.FFmpegError("thumbnail generation failed", err)
+        # stderr goes to a file: an unread pipe fills up (4 KiB on Windows)
+        # with warnings about damaged frames and would block ffmpeg forever
+        with tempfile.TemporaryFile() as err_file:
+            proc = ffmpeg.popen(args, stdout=subprocess.DEVNULL, stderr=err_file,
+                                stdin=subprocess.DEVNULL)
+            while True:
+                try:
+                    proc.wait(timeout=0.2)
+                    break
+                except subprocess.TimeoutExpired:
+                    if cancel is not None and cancel.cancelled:
+                        ffmpeg.terminate(proc)
+                        cancel.check()
+            if proc.returncode != 0:
+                err_file.seek(0)
+                err = err_file.read()[-4000:].decode("utf-8", "replace")
+                raise FFmpegError("thumbnail generation failed", err)
 
     try:
         run(True)
-    except ffmpeg.FFmpegError:
+    except FFmpegError:
         run(False)
     count = len([f for f in os.listdir(d) if f.endswith(".jpg")])
     if count == 0:

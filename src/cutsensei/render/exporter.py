@@ -82,11 +82,15 @@ def build_video_filter(edit: EditMap, out_fps: str, out_size: Optional[Tuple[int
         raise CutSenseiError("Nothing to export: every part of the video is cut.")
     # A frame at time t is shown if a <= t < b.  Frames are sampled at
     # discrete times; shift the start slightly so the first frame of a range
-    # that starts between two frames is kept.
+    # that starts between two frames is kept.  The shifted start must never
+    # reach into the previous range: a frame matching two terms would get the
+    # sum of both timestamps (a jump that freezes the picture).
     sel_terms = []
     pts_terms = []
+    prev_end = 0.0
     for a, b, o, s in ranges:
-        a_s = max(0.0, a - frame_eps)
+        a_s = max(prev_end, a - frame_eps)
+        prev_end = b
         sel_terms.append(f"gte(t,{_num(a_s)})*lt(t,{_num(b)})")
         if s == 1.0:
             mapped = f"({_num(o - a)}+T)"
@@ -215,6 +219,26 @@ def output_fps(media: MediaInfo, settings: ExportSettings) -> Tuple[str, float]:
     return frac, fps
 
 
+def same_file(a: str, b: str) -> bool:
+    """True if both paths name the same file (case-insensitive file systems,
+    links and relative paths included)."""
+    try:
+        if os.path.exists(a) and os.path.exists(b):
+            return os.path.samefile(a, b)
+    except OSError:
+        pass
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
+def _free_name(path: str) -> str:
+    stem, ext = os.path.splitext(path)
+    for n in range(1, 1000):
+        cand = f"{stem} ({n}){ext}"
+        if not os.path.exists(cand):
+            return cand
+    return f"{stem}-{os.getpid()}{ext}"
+
+
 def export_video(media: MediaInfo, timeline: Timeline, auto: AutoEditSettings,
                  settings: ExportSettings, output_path: str,
                  progress: Optional[ProgressCallback] = None,
@@ -224,7 +248,7 @@ def export_video(media: MediaInfo, timeline: Timeline, auto: AutoEditSettings,
     edit = timeline.build_map(auto)
     if not edit.pieces or edit.out_duration <= 0.01:
         raise CutSenseiError("Nothing to export: every part of the video is cut.")
-    if os.path.abspath(output_path) == os.path.abspath(media.path):
+    if same_file(output_path, media.path):
         raise CutSenseiError("The output file must not overwrite the source video.")
     out_dir = os.path.dirname(os.path.abspath(output_path))
     os.makedirs(out_dir, exist_ok=True)
@@ -301,9 +325,18 @@ def export_video(media: MediaInfo, timeline: Timeline, auto: AutoEditSettings,
                     last = exc
             else:
                 raise last
-        os.replace(tmp_output, output_path)
+        final_path = output_path
+        try:
+            os.replace(tmp_output, output_path)
+        except OSError:
+            # e.g. Windows: the old file is open in a player.  Keep the result.
+            final_path = _free_name(output_path)
+            os.replace(tmp_output, final_path)
+            note = (note + "; " if note else "") + \
+                f"{os.path.basename(output_path)} is in use, saved as " \
+                f"{os.path.basename(final_path)}"
         prog(1.0, "done")
-        return ExportResult(output_path, edit.out_duration, encoder, note, log)
+        return ExportResult(final_path, edit.out_duration, encoder, note, log)
     finally:
         for p in (audio_path, script_path, tmp_output):
             try:

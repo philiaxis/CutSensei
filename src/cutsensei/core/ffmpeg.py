@@ -42,6 +42,7 @@ def set_ffmpeg_path(path: Optional[str]) -> None:
     find_ffmpeg.cache_clear()
     find_ffprobe.cache_clear()
     ffmpeg_version.cache_clear()
+    supports_option_files.cache_clear()
     available_encoders.cache_clear()
     _working_encoder_cache.clear()
 
@@ -145,13 +146,40 @@ def ffmpeg_version(exe: Optional[str] = None) -> Tuple[int, int]:
     return (99, 0)
 
 
+@lru_cache(maxsize=4)
+def supports_option_files(exe: Optional[str] = None) -> bool:
+    """Whether ffmpeg understands ``-/option file`` (FFmpeg 7+).
+
+    Probed instead of derived from the version string, because snapshot builds
+    ("N-12345-g...", "2023-...-git") do not carry a usable version number.
+    """
+    exe = exe or find_ffmpeg()
+    import tempfile
+
+    fd, path = tempfile.mkstemp(suffix=".txt")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write("nullsrc=s=16x16:d=0.04[v]")
+        proc = run([exe, "-hide_banner", "-loglevel", "error", "-/filter_complex", path,
+                    "-map", "[v]", "-f", "null", "-"], timeout=30, check=False)
+        return proc.returncode == 0
+    except Exception:
+        return ffmpeg_version(exe) >= (7, 0)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 def filter_complex_args(script_path: str) -> List[str]:
     """Arguments loading a filter graph from a file.
 
     ``-filter_complex_script`` is deprecated since FFmpeg 7 in favour of the
-    ``-/filter_complex`` syntax, so pick the right one for the binary in use.
+    ``-/filter_complex`` syntax (and removed later), so use what the binary
+    in use supports.
     """
-    if ffmpeg_version() >= (7, 0):
+    if supports_option_files():
         return ["-/filter_complex", script_path]
     return ["-filter_complex_script", script_path]
 
@@ -247,6 +275,7 @@ def run_with_progress(args: Sequence[str], total_seconds: float,
     t = threading.Thread(target=_drain_stderr, daemon=True)
     t.start()
     cancelled = False
+    finished = False
     try:
         assert proc.stdout is not None
         for raw in iter(proc.stdout.readline, b""):
@@ -256,8 +285,11 @@ def run_with_progress(args: Sequence[str], total_seconds: float,
             sec = parse_progress_time(raw.decode("utf-8", "replace").strip())
             if sec is not None and on_progress is not None and total_seconds > 0:
                 on_progress(min(1.0, sec / total_seconds))
+        finished = True
     finally:
-        if cancelled or (cancel is not None and cancel.cancelled):
+        # stop ffmpeg on cancel *and* on any error in the loop (a callback
+        # raising must not leave ffmpeg blocked on a full pipe)
+        if not finished or cancelled or (cancel is not None and cancel.cancelled):
             terminate(proc)
         proc.wait()
         t.join(timeout=5)

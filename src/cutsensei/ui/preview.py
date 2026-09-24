@@ -121,8 +121,13 @@ class PreviewEngine(QObject):
             slot.frame = None
             slot.frame_time = -1.0
             slot.preloaded = None
-            slot.player.setSource(QUrl.fromLocalFile(path) if path else QUrl())
             slot.audio.setVolume(0.0)
+            # setSource() ignores an unchanged URL; clear it first so that
+            # re-opening the same file loads it again (and signals LoadedMedia)
+            slot.player.stop()
+            slot.player.setSource(QUrl())
+            if path:
+                slot.player.setSource(QUrl.fromLocalFile(path))
         self._active = 0
 
     def unload(self) -> None:
@@ -174,9 +179,9 @@ class PreviewEngine(QObject):
                 if j < 0:
                     j = 0
                 self._seek_active(self._map.pieces[j].src_start)
-            elif self._pos >= self._map.pieces[-1].src_end - 1e-3:
+            elif self._pos >= self._map.pieces[-1].src_end - self._end_tolerance():
                 self._seek_active(self._map.pieces[0].src_start)
-        elif self._pos >= self._duration - 0.05:
+        elif self._pos >= self._duration - self._end_tolerance():
             self._seek_active(0.0)
         self._playing = True
         self._apply_current(force=True)
@@ -200,7 +205,13 @@ class PreviewEngine(QObject):
         self._stop_at = None
         self._return_to = None
         if was:
+            # the playhead is where the picture is: split / step / set-edge
+            # must act on the frame the user sees
+            ft = self.active.frame_time
+            if ft >= 0 and abs(ft - self._pos) < 0.5:
+                self._pos = ft
             self.playingChanged.emit(False)
+            self.positionChanged.emit(self._pos)
 
     def seek(self, t: float) -> None:
         """Seek to a source time (snapped to kept material in edited mode)."""
@@ -219,10 +230,13 @@ class PreviewEngine(QObject):
         if self._map is not None:
             self.seek(self._map.out_to_src(t_out))
 
+    def _end_tolerance(self) -> float:
+        return max(0.05, 1.5 / self._fps)
+
     def step(self, frames: int) -> None:
         self.pause()
         dt = frames / self._fps
-        t = self._pos + dt
+        t = min(max(0.0, self._pos + dt), max(0.0, self._duration - 0.5 / self._fps))
         if self._mode == EDITED and self._map is not None and self._map.pieces:
             if self._map.piece_index_at_src(t) < 0:
                 if frames > 0:
@@ -250,6 +264,10 @@ class PreviewEngine(QObject):
             self._mode = mode
         self._seek_active(start)
         self.play()
+        if not self._playing:          # nothing to play (e.g. everything is cut)
+            if restore is not None:
+                self._mode = restore
+            return
         self._stop_at = end
         self._return_to = return_to
         self._restore_mode = restore
@@ -342,8 +360,16 @@ class PreviewEngine(QObject):
         self._preload_next()
 
     def _finish(self) -> None:
+        """End of the edit / media reached."""
+        back = self._return_to
+        if self._mode == EDITED and self._map is not None and self._map.pieces:
+            end = self._map.pieces[-1].src_end
+        else:
+            end = self._duration
         self.pause()
-        self.positionChanged.emit(self._pos)
+        # park on the last frame (a later Play starts again from the beginning)
+        target = back if back is not None else max(0.0, end - 0.5 / self._fps)
+        self._seek_active(target)
 
     def _tick(self) -> None:
         if not self._playing:

@@ -58,8 +58,9 @@ class Project:
         media = self.media.to_dict()
         if project_path:
             try:
-                media["relpath"] = os.path.relpath(self.media.path,
-                                                   os.path.dirname(os.path.abspath(project_path)))
+                media["relpath"] = os.path.relpath(
+                    self.media.path, os.path.dirname(os.path.abspath(project_path))
+                ).replace(os.sep, "/")   # portable between Windows and macOS/Linux
             except ValueError:  # different drive on Windows
                 media["relpath"] = None
         return {
@@ -146,7 +147,7 @@ def resolve_media_path(media: Dict[str, Any], project_path: str) -> Optional[str
     base = os.path.dirname(os.path.abspath(project_path))
     rel = media.get("relpath")
     if rel:
-        cand = os.path.normpath(os.path.join(base, rel))
+        cand = os.path.normpath(os.path.join(base, *rel.replace("\\", "/").split("/")))
         if os.path.isfile(cand):
             return cand
     if abs_path:

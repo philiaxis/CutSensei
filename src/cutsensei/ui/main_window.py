@@ -45,6 +45,7 @@ class MainWindow(QMainWindow):
         self.ctrl = ProjectController(self)
         self.engine = PreviewEngine(self)
         self._thumb_job: Optional[JobThread] = None
+        self._runner: Optional[ProgressRunner] = None
         self._busy = False
         self.setWindowIcon(icons.app_icon())
         self.setAcceptDrops(True)
@@ -353,6 +354,14 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._detect_gpu)
 
     def closeEvent(self, event) -> None:
+        if self._busy and self._runner is not None:
+            r = QMessageBox.question(
+                self, APP_NAME, tr("Processing is still running. Cancel it and quit?"),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if r != QMessageBox.Yes:
+                event.ignore()
+                return
+            self._cancel_runner()
         if not self._maybe_save():
             event.ignore()
             return
@@ -364,9 +373,20 @@ class MainWindow(QMainWindow):
         self.qs.setValue("vsplit", self.vsplit.saveState())
         super().closeEvent(event)
 
+    def _cancel_runner(self) -> None:
+        runner = self._runner
+        if runner is None:
+            return
+        try:
+            runner.thread.cancel()
+            runner.thread.wait(60000)   # ffmpeg is terminated by the job itself
+        except RuntimeError:
+            pass
+
     def _stop_threads(self) -> None:
         from .dialogs import stop_background_threads
 
+        self._cancel_runner()
         for job in (self._thumb_job, getattr(self, "_gpu_job", None)):
             if job is not None:
                 try:
@@ -426,14 +446,14 @@ class MainWindow(QMainWindow):
                   self.a_export, self.a_play, self.a_split, self.a_zoom_in, self.a_zoom_out,
                   self.a_zoom_fit, self.a_unlock_all, self.a_select_all):
             a.setEnabled(has and not self._busy)
+        for a in (self.a_import, self.a_open, self.a_prefs, self.recent_menu.menuAction()):
+            a.setEnabled(not self._busy)
         self.a_undo.setEnabled(self.ctrl.history.can_undo and not self._busy)
         self.a_redo.setEnabled(self.ctrl.history.can_redo and not self._busy)
         undo_l = self.ctrl.history.undo_label
         redo_l = self.ctrl.history.redo_label
-        self.a_undo.setToolTip(tr("Undo") + (f": {undo_l}" if undo_l and undo_l != "volume-drag"
-                                             else "") + " (Ctrl+Z)")
-        self.a_redo.setToolTip(tr("Redo") + (f": {redo_l}" if redo_l and redo_l != "volume-drag"
-                                             else "") + " (Ctrl+Shift+Z)")
+        self.a_undo.setToolTip(tr("Undo") + (f": {undo_l}" if undo_l else "") + " (Ctrl+Z)")
+        self.a_redo.setToolTip(tr("Redo") + (f": {redo_l}" if redo_l else "") + " (Ctrl+Shift+Z)")
         self._on_selection()
 
     def _on_selection(self) -> None:
@@ -442,7 +462,7 @@ class MainWindow(QMainWindow):
         for a in (self.a_keep, self.a_speed, self.a_delete, self.a_protect, self.a_unlock,
                   self.a_mark_checked, self.a_set_start, self.a_set_end):
             a.setEnabled(has and not self._busy)
-        self.a_restore.setEnabled(any(s.action == Action.CUT for s in segs))
+        self.a_restore.setEnabled(not self._busy and any(s.action == Action.CUT for s in segs))
         tp = self.timeline
         tp.keep_btn.setEnabled(has)
         tp.speed_btn.setEnabled(has)
@@ -876,7 +896,7 @@ class MainWindow(QMainWindow):
                                                          d),
                                 lambda: self.statusBar().showMessage(tr("Analysis cancelled."),
                                                                      5000))
-        runner.finished.connect(lambda: self._set_busy(False))
+        self._track_runner(runner)
         runner.start()
 
     def _apply_auto(self) -> None:
@@ -900,6 +920,14 @@ class MainWindow(QMainWindow):
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
         self._update_actions()
+
+    def _track_runner(self, runner: ProgressRunner) -> None:
+        self._runner = runner
+
+        def done() -> None:
+            self._runner = None
+            self._set_busy(False)
+        runner.finished.connect(done)
 
     # ================================================================== export
     def export(self) -> None:
@@ -951,7 +979,7 @@ class MainWindow(QMainWindow):
                                                                      5000),
                                 messages={"audio": tr("Rendering audio..."),
                                           "video": tr("Encoding video...")})
-        runner.finished.connect(lambda: self._set_busy(False))
+        self._track_runner(runner)
         runner.start()
 
     def show_preferences(self) -> None:

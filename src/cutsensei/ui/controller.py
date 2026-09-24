@@ -6,6 +6,7 @@ the "modified" flag and the views stay consistent.
 
 from __future__ import annotations
 
+import time
 from typing import Iterable, List, Optional, Sequence
 
 from PySide6.QtCore import QObject, Signal
@@ -17,6 +18,8 @@ from ..core.project import Project
 from ..core.settings import AutoEditSettings
 from ..core.timeline import Action, EditMap, Segment, Timeline
 from .i18n import tr
+
+MERGE_WINDOW_S = 2.0
 
 
 class ProjectController(QObject):
@@ -35,6 +38,10 @@ class ProjectController(QObject):
         self._selected: List[str] = []
         self._map: Optional[EditMap] = None
         self.settings_pending = False   # settings changed since the last auto edit
+        self._merge_key: Optional[str] = None
+        self._merge_time = 0.0
+        self._drag_pending = False
+        self._drag_moved = False
 
     # ------------------------------------------------------------ project
     def set_project(self, project: Optional[Project]) -> None:
@@ -79,9 +86,22 @@ class ProjectController(QObject):
             self.dirtyChanged.emit(False)
 
     # ------------------------------------------------------------ undo
-    def _snapshot(self, label: str) -> None:
+    def _snapshot(self, label: str, merge_key: Optional[str] = None) -> None:
+        """Remember the state before a change.
+
+        Rapid changes with the same ``merge_key`` (dragging a slider, typing in
+        a spin box) become one undo step - but only while nothing else was
+        edited in between, nothing was undone, and the last change was recent.
+        """
         assert self.project is not None
+        now = time.monotonic()
+        if (merge_key is not None and merge_key == self._merge_key and self.history.can_undo
+                and not self.history.can_redo and now - self._merge_time < MERGE_WINDOW_S):
+            self._merge_time = now
+            return
         self.history.push(label, self.project.edit_state())
+        self._merge_key = merge_key
+        self._merge_time = now
         self.historyChanged.emit()
 
     def _changed(self, timeline: bool = True, settings: bool = False) -> None:
@@ -101,6 +121,7 @@ class ProjectController(QObject):
     def undo(self) -> None:
         if not self.project:
             return
+        self._merge_key = None
         state = self.history.undo(self.project.edit_state())
         if state is not None:
             self.project.restore_edit_state(state)
@@ -110,6 +131,7 @@ class ProjectController(QObject):
     def redo(self) -> None:
         if not self.project:
             return
+        self._merge_key = None
         state = self.history.redo(self.project.edit_state())
         if state is not None:
             self.project.restore_edit_state(state)
@@ -199,8 +221,11 @@ class ProjectController(QObject):
         idx = self._target(indices)
         if not self.project or not idx:
             return
-        if merge_key is None or self.history.undo_label != merge_key:
-            self._snapshot(merge_key or tr("Change volume"))
+        key = None
+        if merge_key is not None:
+            ids = ",".join(self.project.timeline[i].id for i in idx)
+            key = f"volume:{merge_key}:{ids}"
+        self._snapshot(tr("Change volume"), key)
         self.project.timeline.set_volume(idx, volume)
         self._changed()
 
@@ -265,19 +290,30 @@ class ProjectController(QObject):
 
     # boundary dragging: begin once, update many times
     def begin_boundary_drag(self) -> None:
-        if self.project:
-            self._snapshot(tr("Adjust boundary"))
+        # the undo step is created lazily on the first real move, so a click
+        # on a boundary without dragging changes nothing
+        self._drag_pending = True
+        self._drag_moved = False
 
     def move_boundary(self, index: int, t: float) -> float:
         assert self.project is not None
-        applied = self.project.timeline.move_boundary(index, t)
+        tl = self.project.timeline
+        if 0 < index < len(tl) and abs(tl[index].start - t) < 1e-9:
+            return t
+        if self._drag_pending:
+            self._snapshot(tr("Adjust boundary"))
+            self._drag_pending = False
+        applied = tl.move_boundary(index, t)
+        self._drag_moved = True
         self._changed()
         return applied
 
     def end_boundary_drag(self) -> None:
-        if self.project:
+        self._drag_pending = False
+        if self.project and self._drag_moved:
             self.project.timeline.normalize()
             self._changed()
+        self._drag_moved = False
 
     # ------------------------------------------------------------ settings / auto
     def update_settings(self, **changes) -> None:
@@ -287,9 +323,7 @@ class ProjectController(QObject):
         changed = {k: v for k, v in changes.items() if getattr(st, k) != v}
         if not changed:
             return
-        key = tr("Change settings")
-        if self.history.undo_label != key:
-            self._snapshot(key)
+        self._snapshot(tr("Change settings"), "settings:" + ",".join(sorted(changed)))
         for k, v in changed.items():
             setattr(st, k, v)
         # speed / audio of sped-up parts take effect immediately

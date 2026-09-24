@@ -200,6 +200,7 @@ STRINGS = {
     "Previous item to check": "前の確認対象",
     "Previous item to check (Shift+N)": "前の確認対象 (Shift+N)",
     "Processing": "処理",
+    "Processing is still running. Cancel it and quit?": "処理を実行中です。中止して終了しますか？",
     "Properties panel": "プロパティパネル",
     "Protected": "保護",
     "Protected segments are never deleted and never changed by the automatic edit.":

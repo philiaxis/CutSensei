@@ -20,9 +20,28 @@ def main(argv: Optional[List[str]] = None) -> int:
     from .core import ffmpeg
     from .ui import i18n
 
+    from PySide6.QtCore import QEvent
+
+    class CutSenseiApp(QApplication):
+        """Handles macOS "open document" events (Finder double-click, Dock)."""
+
+        def __init__(self, args: List[str]) -> None:
+            super().__init__(args)
+            self.main_window = None
+            self.pending: List[str] = []
+
+        def event(self, e) -> bool:  # noqa: N802 - Qt naming
+            if e.type() == QEvent.FileOpen and e.file():
+                if self.main_window is None:
+                    self.pending.append(e.file())
+                else:
+                    _open_path(self.main_window, e.file())
+                return True
+            return super().event(e)
+
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
-    app = QApplication(argv)
+    app = CutSenseiApp(argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(APP_NAME)
     app.setApplicationVersion(__version__)
@@ -53,6 +72,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     win = MainWindow()
     win.show()
+    app.main_window = win
     smoke = os.environ.get("CUTSENSEI_SMOKE_TEST")
     if smoke:
         # used by CI / packaging checks: start, render once, save a screenshot, quit
@@ -62,15 +82,17 @@ def main(argv: Optional[List[str]] = None) -> int:
             win.grab().save(smoke)
             app.quit()
         QTimer.singleShot(1500, finish)
-    for arg in argv[1:]:
-        if arg.startswith("-"):
-            continue
-        if arg.endswith(".cutsensei"):
-            win.open_project(arg)
-        else:
-            win.import_video(arg)
-        break
+    files = [a for a in argv[1:] if not a.startswith("-")] + app.pending
+    if files:
+        _open_path(win, files[0])
     return app.exec()
+
+
+def _open_path(win, path: str) -> None:
+    if path.lower().endswith(".cutsensei"):
+        win.open_project(path)
+    else:
+        win.import_video(path)
 
 
 if __name__ == "__main__":

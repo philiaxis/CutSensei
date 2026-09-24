@@ -198,3 +198,43 @@ def test_cancel_export(sync_video, tmp_path):
         export_video(media, tl, st, ExportSettings(encoder="libx264"),
                      str(tmp_path / "c.mp4"), cancel=token)
     assert not (tmp_path / "c.mp4").exists()
+
+
+def _counter_video(path, fps, dur, w=320, h=96):
+    from conftest import _frame_pattern
+
+    cmd = [ffmpeg.find_ffmpeg(), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24",
+           "-s", f"{w}x{h}", "-r", str(fps), "-i", "pipe:0", "-c:v", "libx264", "-preset",
+           "ultrafast", "-crf", "18", "-pix_fmt", "yuv420p", str(path)]
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    for i in range(int(fps * dur)):
+        p.stdin.write(_frame_pattern(i, w, h).tobytes())
+    p.stdin.close()
+    assert p.wait() == 0
+    return str(path)
+
+
+@pytest.mark.parametrize("fps,boundary", [(25, 8.1), (30, 8.01), (24, 7.3)])
+def test_speed_change_without_cut_is_not_frozen(tmp_path, fps, boundary):
+    """Regression: a 1x -> 4x boundary that is not frame aligned must not
+    produce a timestamp jump (frozen picture, lost sped-up part)."""
+    dur = 16
+    src = _counter_video(tmp_path / f"c{fps}.mp4", fps, dur)
+    media = probe(src)
+    st = AutoEditSettings(writing_speed=4.0)
+    tl = Timeline(dur, [Segment(0.0, boundary, Kind.SPEECH, Action.KEEP),
+                        Segment(boundary, 12.0, Kind.WRITING, Action.SPEED),
+                        Segment(12.0, dur, Kind.SPEECH, Action.KEEP)])
+    edit = tl.build_map(st)
+    out = str(tmp_path / "o.mp4")
+    export_video(media, tl, st, ExportSettings(encoder="libx264", quality=0), out)
+    frames = decode_frames(out)
+    assert abs(len(frames) - round(edit.out_duration * fps)) <= 1
+    bad = 0
+    for i, frame in enumerate(frames):
+        t_out = (i + 0.5) / fps
+        piece = edit.pieces[edit.piece_index_at_out(t_out)]
+        got = decode_frame_pattern(frame) / fps
+        if abs(got - edit.out_to_src(t_out)) > (1.5 * piece.speed) / fps + 0.02:
+            bad += 1
+    assert bad <= 2, f"{bad} frames out of sync"
