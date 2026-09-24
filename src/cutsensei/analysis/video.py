@@ -55,6 +55,7 @@ class VideoFeatures:
     width: int
     height: int
     polarity: int              # +1 bright ink (blackboard), -1 dark ink (whiteboard)
+    nav: Optional[np.ndarray] = None  # screen recordings: scrolling / page turns
 
 
 def union_rect(regions: Sequence[Sequence[float]]) -> Tuple[float, float, float, float]:
@@ -75,7 +76,8 @@ def _even(v: float) -> int:
     return max(2, int(round(v / 2.0)) * 2)
 
 
-def analysis_geometry(media: MediaInfo, regions: Sequence[Sequence[float]]):
+def analysis_geometry(media: MediaInfo, regions: Sequence[Sequence[float]],
+                      max_size: Tuple[int, int] = (MAX_WIDTH, MAX_HEIGHT)):
     """Crop rectangle in source pixels and the analysis frame size."""
     x, y, w, h = union_rect(regions)
     W, H = max(2, media.width), max(2, media.height)
@@ -83,23 +85,40 @@ def analysis_geometry(media: MediaInfo, regions: Sequence[Sequence[float]]):
     cw, ch = _even(w * W), _even(h * H)
     cw = min(cw, W - cx - (W - cx) % 2)
     ch = min(ch, H - cy - (H - cy) % 2)
-    scale = min(1.0, MAX_WIDTH / cw, MAX_HEIGHT / ch)
+    scale = min(1.0, max_size[0] / cw, max_size[1] / ch)
     aw, ah = _even(cw * scale), _even(ch * scale)
     return (cx, cy, cw, ch), (aw, ah)
 
 
-def region_mask(regions: Sequence[Sequence[float]], size: Tuple[int, int]) -> np.ndarray:
+def _rect_pixels(r: Sequence[float], union: Tuple[float, float, float, float],
+                 size: Tuple[int, int]) -> Tuple[int, int, int, int]:
+    ux, uy, uw, uh = union
     aw, ah = size
+    x0 = int(round((r[0] - ux) / uw * aw))
+    y0 = int(round((r[1] - uy) / uh * ah))
+    x1 = int(round((r[0] + r[2] - ux) / uw * aw))
+    y1 = int(round((r[1] + r[3] - uy) / uh * ah))
+    return max(0, x0), max(0, y0), min(aw, x1), min(ah, y1)
+
+
+def region_mask(regions: Sequence[Sequence[float]], size: Tuple[int, int],
+                exclude: Sequence[Sequence[float]] = ()) -> np.ndarray:
+    """Analysed pixels: inside the regions and outside ``exclude`` (e.g. a
+    webcam picture-in-picture), all rectangles normalized to the frame."""
+    aw, ah = size
+    union = union_rect(regions)
     if not regions:
-        return np.ones((ah, aw), bool)
-    ux, uy, uw, uh = union_rect(regions)
-    mask = np.zeros((ah, aw), bool)
-    for r in regions:
-        x0 = int(round((r[0] - ux) / uw * aw))
-        y0 = int(round((r[1] - uy) / uh * ah))
-        x1 = int(round((r[0] + r[2] - ux) / uw * aw))
-        y1 = int(round((r[1] + r[3] - uy) / uh * ah))
-        mask[max(0, y0):min(ah, y1), max(0, x0):min(aw, x1)] = True
+        mask = np.ones((ah, aw), bool)
+    else:
+        mask = np.zeros((ah, aw), bool)
+        for r in regions:
+            x0, y0, x1, y1 = _rect_pixels(r, union, size)
+            mask[y0:y1, x0:x1] = True
+        if mask.sum() < 16:
+            mask[:] = True
+    for r in exclude:
+        x0, y0, x1, y1 = _rect_pixels(r, union, size)
+        mask[y0:y1, x0:x1] = False
     if mask.sum() < 16:
         mask[:] = True
     return mask
@@ -362,21 +381,34 @@ def extract_video_features(media: MediaInfo, regions: Sequence[Sequence[float]],
                            progress: Optional[Callable[[float], None]] = None,
                            cancel: Optional[CancelToken] = None,
                            hw_decode: bool = False,
-                           fast_decode: bool = True) -> Tuple[VideoFeatures, float, int]:
-    """Decode the video and run :class:`BoardTracker`.
+                           fast_decode: bool = True,
+                           source: str = "camera",
+                           exclude: Sequence[Sequence[float]] = ()
+                           ) -> Tuple[VideoFeatures, float, int]:
+    """Decode the video and run :class:`BoardTracker` (camera recordings) or
+    :class:`~.screen.ScreenTracker` (``source="screen"``, screen recordings of
+    digital notes; ``exclude`` masks e.g. a webcam picture-in-picture).
 
     Returns the features, the thumbnail interval and number of thumbnails.
     """
-    (cx, cy, cw, ch), (aw, ah) = analysis_geometry(media, regions)
-    mask = region_mask(regions, (aw, ah))
+    screen = source == "screen"
+    if screen:
+        from .screen import SCREEN_MAX, ScreenTracker
+
+        (cx, cy, cw, ch), (aw, ah) = analysis_geometry(media, regions,
+                                                       (SCREEN_MAX, SCREEN_MAX))
+    else:
+        (cx, cy, cw, ch), (aw, ah) = analysis_geometry(media, regions)
+    mask = region_mask(regions, (aw, ah), exclude)
     fps = ANALYSIS_FPS
+    pix = "bgr24" if screen else "gray"
     thumb_int = thumbnail_interval(media.duration)
     chain = (f"[0:v]fps={fps}:start_time=0,split=2[a][b];"
-             f"[a]crop={cw}:{ch}:{cx}:{cy},scale={aw}:{ah}:flags=area,format=gray[ana];"
+             f"[a]crop={cw}:{ch}:{cx}:{cy},scale={aw}:{ah}:flags=area,format={pix}[ana];"
              f"[b]fps=1/{thumb_int}:start_time=0,scale={THUMB_WIDTH}:-2,format=yuvj420p[th]")
     if not thumbs_dir:
         chain = (f"[0:v]fps={fps}:start_time=0,crop={cw}:{ch}:{cx}:{cy},"
-                 f"scale={aw}:{ah}:flags=area,format=gray[ana]")
+                 f"scale={aw}:{ah}:flags=area,format={pix}[ana]")
 
     def build_args(skip: bool) -> List[str]:
         args: List[str] = []
@@ -384,26 +416,30 @@ def extract_video_features(media: MediaInfo, regions: Sequence[Sequence[float]],
             args += ["-skip_frame", "nonref"]
         args += ffmpeg.hwaccel_args(hw_decode)
         args += ["-i", media.path, "-an", "-sn", "-dn", "-filter_complex", chain,
-                 "-map", "[ana]", "-f", "rawvideo", "-pix_fmt", "gray", "pipe:1"]
+                 "-map", "[ana]", "-f", "rawvideo", "-pix_fmt", pix, "pipe:1"]
         if thumbs_dir:
             args += ["-map", "[th]", "-c:v", "mjpeg", "-q:v", "6", "-start_number", "0",
                      "-f", "image2", "-y", os.path.join(thumbs_dir, "t_%06d.jpg")]
         return args
 
-    frame_bytes = aw * ah
+    shape: Tuple[int, ...] = (ah, aw, 3) if screen else (ah, aw)
+    frame_bytes = int(np.prod(shape))
     expected = max(1, int(media.duration * fps))
 
-    warmup = int(min(expected, BACKGROUND_WARMUP_S * fps))
+    warmup = 0 if screen else int(min(expected, BACKGROUND_WARMUP_S * fps))
 
-    def run(skip: bool) -> BoardTracker:
-        tracker: Optional[BoardTracker] = None
+    def run(skip: bool):
+        tracker = None
         buffered: List[np.ndarray] = []
 
-        def start(frames: List[np.ndarray]) -> BoardTracker:
-            # the median of the first frames is a background without the lecturer
-            init = np.median(np.stack(frames[::2]), axis=0).astype(np.uint8) \
-                if len(frames) >= 8 else None
-            tr = BoardTracker((aw, ah), mask, fps, initial_background=init)
+        def start(frames: List[np.ndarray]):
+            if screen:
+                tr = ScreenTracker((aw, ah), mask, fps)
+            else:
+                # the median of the first frames is a background without the lecturer
+                init = np.median(np.stack(frames[::2]), axis=0).astype(np.uint8) \
+                    if len(frames) >= 8 else None
+                tr = BoardTracker((aw, ah), mask, fps, initial_background=init)
             for f in frames:
                 tr.feed(f)
             return tr
@@ -413,11 +449,11 @@ def extract_video_features(media: MediaInfo, regions: Sequence[Sequence[float]],
             for raw in reader.read_blocks(frame_bytes):
                 if len(raw) < frame_bytes:
                     break
-                frame = np.frombuffer(raw, np.uint8).reshape(ah, aw)
+                frame = np.frombuffer(raw, np.uint8).reshape(shape)
                 count += 1
                 if tracker is None:
                     buffered.append(frame)
-                    if len(buffered) >= warmup:
+                    if len(buffered) >= max(1, warmup):
                         tracker = start(buffered)
                         buffered = []
                 else:

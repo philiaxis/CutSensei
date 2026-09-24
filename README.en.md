@@ -7,8 +7,9 @@ writing is sped up, idle waiting time is cut.
 
 ![CutSensei main window](docs/images/main_en.png)
 
-CutSensei analyses the audio and video of a lecture recorded with a fixed camera and builds an
-edit automatically. The result is shown in a familiar editor layout (preview in the centre,
+CutSensei analyses the audio and video of a lecture recorded with a fixed camera (blackboard,
+whiteboard, electronic board) or a screen recording of digital notes (GoodNotes, Notability,
+OneNote, ...) and builds an edit automatically. The result is shown in a familiar editor layout (preview in the centre,
 timeline at the bottom) where it can be checked, corrected and exported to MP4. It runs on
 Windows, macOS and Linux and can use NVIDIA, Intel, AMD and Apple hardware encoders.
 
@@ -28,6 +29,11 @@ Windows, macOS and Linux and can use NVIDIA, Intel, AMD and Apple hardware encod
   board is not writing; strokes written behind the lecturer's body are credited to the time they
   were written once they become visible. The board area can be marked on screen (optional, several
   rectangles allowed).
+- **Screen recordings of digital notes**: recordings of GoodNotes, Notability, OneNote, whiteboard
+  apps or slides written on with a pen are recognised automatically and analysed pixel-exactly.
+  Scrolling, page turns, a laser pointer, the mouse cursor, the status bar clock and a webcam
+  picture-in-picture of the lecturer are not mistaken for writing
+  ([details](#screen-recordings-of-digital-notes)).
 - **Never cuts too much**: margins before and after speech, short pauses and breaths are kept, the
   finished board is shown for a moment after writing, short parts are merged so the speed does not
   flicker. Uncertain parts are never deleted automatically.
@@ -46,7 +52,8 @@ Windows, macOS and Linux and can use NVIDIA, Intel, AMD and Apple hardware encod
 
 The design goal "60 s explanation + 40 s silent writing + 20 s waiting, writing at 4x → 60 + 10 =
 70 s (excluding protective margins)" is verified by the test suite (`tests/test_acceptance.py`) with
-a synthetic lecture. With the default margins the result is about 72 s.
+a synthetic lecture. With the default margins the result is about 72 s. The same lecture written
+in a note app on a tablet and screen-recorded gives the same result (`tests/test_screen.py`).
 
 ## Installation
 
@@ -93,8 +100,9 @@ python -m cutsensei
 
 **Import → (optional) mark the board → adjust settings → Auto edit → review and correct → Export**
 
-1. **Import video** (Ctrl+I) or drop a file on the window.
-2. Optionally mark the blackboard/whiteboard with **Board region**.
+1. **Import video** (Ctrl+I) or drop a file on the window - a camera or a screen recording.
+2. Optionally mark the blackboard/whiteboard (in a screen recording: the page area) with **Board
+   region**.
 3. Adjust **board writing speed**, **cut aggressiveness** and **margins around speech** in the
    *Auto edit* panel (more options under *Advanced settings*).
 4. Press **Auto edit** (Ctrl+R). Afterwards the original length, edited length, sped-up and deleted
@@ -108,6 +116,32 @@ Timeline colours are always accompanied by labels and speeds: green = normal spe
 a shield marks protected segments. The timeline shows the *edited length* by default and can switch
 to the *original length*. Drag boundaries to adjust them, Ctrl+wheel zooms. In the edited view, pull a
 red cut marker sideways to bring back removed material.
+
+### Screen recordings of digital notes
+
+Explanations written on an iPad (GoodNotes, Notability), in OneNote, a whiteboard app or on a PDF
+and recorded as a screen recording are supported. On import CutSensei **detects whether the video is
+a camera or a screen recording** (shown under *Recording type* in the *Auto edit* panel, where it can
+also be chosen by hand) and uses a dedicated analysis for screen recordings:
+
+| On screen | Treated as |
+|---|---|
+| writing, erasing, adding text or shapes with the pen | board writing (sped up when silent), with exact timing |
+| scrolling, zooming, turning pages | part of working on the notes: sped up together with the writing around it when silent; content that was already there is not counted again |
+| laser pointer, cursor, pen hover, menus | not writing (changes that vanish within 1.5 s or are undone shortly after); silent pointing for a while is kept at 1x and marked for checking |
+| status bar clock, battery and similar indicators | ignored (small changes repeating on their own at the same place) |
+| a webcam picture of the lecturer, a playing video | detected as a constantly changing area and ignored (shown in the board region dialog) |
+| a still screen without speech | waiting, removed |
+
+Marking the page area without the app's toolbars as the board region makes the analysis even more
+robust; a webcam picture that is ignored automatically is shown hatched in that dialog. On an iPad, switch the **microphone on** in the screen recording control; speech is detected
+from the audio. Recordings with variable frame rate (iPad screen recordings drop frames while nothing
+changes) are handled. A classroom electronic board filmed *with a camera* is analysed like a
+blackboard.
+
+![A screen recording analysed](docs/images/main_screen_en.png)
+
+![Board region of a screen recording; the webcam picture is ignored automatically](docs/images/board_region_screen_en.png)
 
 ### Keyboard
 
@@ -132,7 +166,9 @@ cutsensei-cli auto lecture.mp4 -o lecture_edited.mp4 --speed 4 --board 0.05,0.08
 cutsensei-cli analyze lecture.mp4 -o lecture.cutsensei
 cutsensei-cli segments lecture.cutsensei
 cutsensei-cli export lecture.cutsensei -o lecture_edited.mp4 --height 1080 --quality 2
+cutsensei-cli auto goodnotes.mp4 --source screen   # recording type: auto (default), camera, screen
 cutsensei-cli demo demo_lecture.mp4     # synthetic 60/40/20 s lecture for testing
+cutsensei-cli demo demo_notes.mp4 --scenario screen   # the same as a tablet screen recording
 ```
 
 `--board` takes fractions of the frame (x, y, width, height between 0 and 1).
@@ -146,6 +182,8 @@ cutsensei-cli demo demo_lecture.mp4     # synthetic 60/40/20 s lecture for testi
   Preferences.
 - **Detection does not fit your lectures** — mark the board region, lower the aggressiveness or tune
   the thresholds in *Advanced settings*; protect important parts with "always keep".
+- **A screen recording is taken for a camera recording (or vice versa)** — choose the right
+  *Recording type* in the *Auto edit* panel and press *Re-apply auto edit*.
 
 ## Development
 

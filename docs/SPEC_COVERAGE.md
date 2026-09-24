@@ -8,7 +8,8 @@
 |---|---|---|
 | 説明中は等速、無言の板書は倍速、不要な待機はカット | `analysis/classifier.py` | `tests/test_classifier.py`, `tests/test_acceptance.py` |
 | 自動編集後に一般的な編集ソフトに近い画面で確認・修正・書き出し | `ui/main_window.py` ほか | `tests/test_gui.py` |
-| 固定カメラの講義動画一本を対象 | 黒板範囲・背景モデルが固定カメラ前提 | — |
+| 固定カメラの講義動画一本を対象 | 板書範囲・背景モデルが固定カメラ前提 | — |
+| （追加）電子黒板・電子ノートの画面録画にも対応 | `analysis/source.py`（種類の自動判定）、`analysis/screen.py` | `tests/test_screen.py` |
 
 ## 2. 自動編集の仕様
 
@@ -22,7 +23,8 @@
 | 倍速区間の音声：保持・音量調整・ミュート | `SpeedAudio`、WSOLA でピッチ維持 | `test_export_keeps_pitch_in_sped_up_part` |
 | 無音判定だけで決めない／チョーク音を発話と区別 | Silero VAD＋声の周期性、打音は別集計 | `test_dsp_separates_speech_from_chalk` |
 | 移動と書いている場面を区別 | 線の出現・消失の追跡、人物領域の除外 | `test_walking_person_is_not_writing` |
-| 黒板・ホワイトボードの範囲を画面上で指定 | 黒板範囲ダイアログ（複数矩形） | `docs/images/board_region_ja.png` |
+| （画面録画）ポインター・スクロール・ページめくり・時計・ワイプを板書と誤認しない | 残る変化のみ確定、ページ操作、表示の変化・カメラ映像の除外 | `test_laser_pointer_and_cursor_are_not_ink`, `test_scroll_and_page_turn_are_navigation_not_ink`, `test_status_bar_clock_is_ignored`, `test_webcam_picture_in_picture_is_ignored` |
+| 黒板・ホワイトボードの範囲を画面上で指定 | 板書範囲ダイアログ（複数矩形、画面録画ではページ部分） | `docs/images/board_region_ja.png` |
 | 発話前後の保護余白 | `pad_before` / `pad_after` | `test_speech_margins` |
 | 息継ぎ・問いかけ後の間・完成した式を見せる時間を切らない | 間のつなぎ、短い待機は残す、板書後の保持 | `test_breathing_gaps_stay_speech`, `test_short_pause_is_not_cut` |
 | 等速と倍速の頻繁な切り替えを防ぐ | 最短倍速時間、板書中の間の統合、はさまれた等速の統合 | `test_short_writing_not_sped_up`, `test_writing_with_short_pauses_is_one_segment` |
@@ -58,7 +60,8 @@
 
 | 要件 | 実装 | 検証 |
 |---|---|---|
-| 読み込み → 黒板範囲 → 設定 → 自動編集 → 修正 → 書き出し | ツールバーの並び・画面のガイド | — |
+| 読み込み → 板書範囲 → 設定 → 自動編集 → 修正 → 書き出し | ツールバーの並び・画面のガイド | — |
+| （追加）素材の種類（自動 / カメラ撮影 / 画面録画）の表示と変更 | 右パネル「素材の種類」、変更時は再解析 | `test_recording_type_setting` |
 | 自動編集後に元の長さ・編集後の長さ・倍速/削除時間・確認対象数を表示 | ステータスバー、左パネル | — |
 | 不確かな箇所は勝手に削除しない | 曖昧区間は等速＋確認対象 | 分類テスト |
 | 解析・書き出しの進捗表示とキャンセル | `ProgressRunner`、`CancelToken` | `test_cancel_export` |
@@ -72,7 +75,7 @@
 | 読み込み〜自動判定〜確認・修正〜書き出しを一通り完了 | `test_full_workflow`、配布版 CI のスモークテスト |
 | 最終動画へ速度変更とカットが反映 | `test_export_av_sync`（全フレーム・音声位置を照合） |
 | 話しながらの板書は等速、無言の板書は倍速、発話の頭と末尾が欠けない | `tests/test_acceptance.py`, `test_speech_margins` |
-| 説明 60 秒＋無言の板書 40 秒＋待機 20 秒（4 倍）→ 余白を除き 70 秒 | `test_design_doc_scenario`（積極性 0/50/100 で 70〜75 秒） |
+| 説明 60 秒＋無言の板書 40 秒＋待機 20 秒（4 倍）→ 余白を除き 70 秒 | `test_design_doc_scenario`（積極性 0/50/100 で 70〜75 秒）、画面録画版 `test_design_doc_scenario_as_screen_recording` |
 
 ## 対応環境
 

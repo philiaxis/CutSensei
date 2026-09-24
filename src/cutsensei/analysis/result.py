@@ -14,7 +14,7 @@ ANALYSIS_VERSION = 1
 HOP = 0.1  # seconds per analysis frame (10 Hz)
 
 _ARRAY_FIELDS = ("speech", "voicing", "loudness", "clicks", "ink", "motion", "hand",
-                 "global_change", "wave_peaks")
+                 "global_change", "nav", "wave_peaks")
 
 
 @dataclass
@@ -31,6 +31,8 @@ class AnalysisResult:
     motion: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
     hand: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
     global_change: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
+    # screen recordings: scrolling, zooming and page turns (0..1)
+    nav: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
     # waveform overview for the timeline (uint8, ``wave_rate`` values per second)
     wave_peaks: np.ndarray = field(default_factory=lambda: np.zeros(0, np.uint8))
     wave_rate: int = 100
@@ -112,6 +114,37 @@ class AnalysisResult:
     def region_signature(self) -> str:
         return json.dumps([[round(v, 4) for v in r] for r in self.board_regions])
 
+    @property
+    def source(self) -> str:
+        """``"camera"`` or ``"screen"``: how the video was analysed."""
+        return str(self.meta.get("source", "camera"))
+
+    @property
+    def source_detected(self) -> str:
+        """What the automatic detection found (older analyses: the source used)."""
+        return str(self.meta.get("source_detected") or self.source)
+
+    @property
+    def live_rects(self) -> List[List[float]]:
+        return [list(map(float, r)) for r in self.meta.get("live_rects", [])]
+
 
 def regions_signature(regions: Optional[List[List[float]]]) -> str:
     return json.dumps([[round(v, 4) for v in r] for r in (regions or [])])
+
+
+def resolve_source(requested: str, analysis: Optional[AnalysisResult]) -> Optional[str]:
+    """The source type a setting stands for (``None``: not known before analysing)."""
+    if requested in ("camera", "screen"):
+        return requested
+    return analysis.source_detected if analysis is not None else None
+
+
+def video_analysis_current(analysis: Optional[AnalysisResult],
+                           regions: Optional[List[List[float]]], requested: str) -> bool:
+    """True when ``analysis`` was made with these board regions and source type."""
+    if analysis is None:
+        return False
+    if regions_signature(analysis.board_regions) != regions_signature(regions):
+        return False
+    return resolve_source(requested, analysis) == analysis.source

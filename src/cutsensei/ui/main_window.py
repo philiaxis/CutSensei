@@ -14,20 +14,20 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QLabel, QMainWindow, Q
 
 from .. import APP_NAME, __version__
 from ..analysis.pipeline import analyze
-from ..analysis.result import regions_signature
+from ..analysis.result import regions_signature, video_analysis_current
 from ..analysis.thumbnails import generate_thumbnails, thumbnail_info
 from ..core.errors import CutSenseiError
 from ..core.media import VIDEO_EXTENSIONS, probe
 from ..core.paths import autosave_path
 from ..core.project import PROJECT_EXTENSION, Project
-from ..core.settings import AutoEditSettings, VadEngine
+from ..core.settings import AutoEditSettings, SourceType, VadEngine
 from ..core.timeline import Action
 from ..render.exporter import export_video
 from . import icons
 from .controller import ProjectController
 from .dialogs import (BoardRegionDialog, ExportDialog, PreferencesDialog, show_about,
                       show_shortcuts)
-from .fmt import fmt_duration, fmt_time
+from .fmt import fmt_duration, fmt_time, source_label
 from .i18n import tr
 from .panels import MediaPanel, PropertiesPanel
 from .settings_store import app_settings
@@ -97,7 +97,7 @@ class MainWindow(QMainWindow):
         self.a_undo = act("Undo", "undo", QKeySequence.Undo, self.ctrl.undo)
         self.a_redo = act("Redo", "redo", ["Ctrl+Shift+Z", "Ctrl+Y"], self.ctrl.redo)
         self.a_board = act("Board region", "board", None, self.edit_board_region,
-                           tip=tr("Mark the blackboard / whiteboard area (optional)"))
+                           tip=tr("Mark the blackboard, whiteboard or note area (optional)"))
         self.a_auto = act("Auto edit", "auto", "Ctrl+R", self.run_auto_edit,
                           tip=tr("Analyse the video and create the edit (Ctrl+R)"))
         self.a_export = act("Export", "export", "Ctrl+E", self.export)
@@ -194,7 +194,8 @@ class MainWindow(QMainWindow):
         cl.setContentsMargins(0, 0, 0, 0)
         cl.setSpacing(0)
         self.video = VideoView()
-        self.video.set_hint(tr("1. Import a lecture video (Ctrl+I) or drop it here\n"
+        self.video.set_hint(tr("1. Import a lecture video or screen recording (Ctrl+I), "
+                               "or drop it here\n"
                                "2. Optionally mark the board region\n"
                                "3. Press \"Auto edit\"\n"
                                "4. Check and correct on the timeline\n"
@@ -614,9 +615,12 @@ class MainWindow(QMainWindow):
     def _default_settings(self) -> AutoEditSettings:
         raw = self.qs.value("default_settings", "")
         try:
-            return AutoEditSettings.from_dict(json.loads(raw)) if raw else AutoEditSettings()
+            st = AutoEditSettings.from_dict(json.loads(raw)) if raw else AutoEditSettings()
         except (ValueError, TypeError):
-            return AutoEditSettings()
+            st = AutoEditSettings()
+        # every video is checked anew (a camera and a screen recording may alternate)
+        st.source_type = SourceType.AUTO
+        return st
 
     def _remember_settings(self) -> None:
         if self.ctrl.project:
@@ -848,7 +852,10 @@ class MainWindow(QMainWindow):
         if p is None:
             return
         self.engine.pause()
-        dlg = BoardRegionDialog(p.media, p.board_regions, self.engine.position, self)
+        excluded = p.analysis.live_rects if (p.analysis is not None
+                                             and p.analysis.source == SourceType.SCREEN) else []
+        dlg = BoardRegionDialog(p.media, p.board_regions, self.engine.position, self,
+                                excluded=excluded)
         if dlg.exec() == BoardRegionDialog.Accepted:
             before = regions_signature(p.board_regions)
             self.ctrl.set_board_regions(dlg.regions())
@@ -865,9 +872,10 @@ class MainWindow(QMainWindow):
             self._error(tr("Auto edit"), tr("The source video was not found."))
             return
         self.engine.pause()
-        need_video = p.analysis is None or \
-            regions_signature(p.analysis.board_regions) != regions_signature(p.board_regions)
+        need_video = not video_analysis_current(p.analysis, p.board_regions,
+                                                p.settings.source_type)
         engine = p.settings.vad_engine
+        source_type = p.settings.source_type
         need_audio = p.analysis is None or (
             engine != VadEngine.AUTO and p.analysis.vad_engine and engine != p.analysis.vad_engine)
         if not need_video and not need_audio:
@@ -880,13 +888,14 @@ class MainWindow(QMainWindow):
         def work(progress, token):
             return analyze(media, regions, engine, progress=progress, cancel=token,
                            hw_decode=hw, previous=previous,
-                           reuse_audio=(previous is not None and not need_audio))
+                           reuse_audio=(previous is not None and not need_audio),
+                           source_type=source_type)
 
         def ok(result) -> None:
             if self.ctrl.project is not p:
                 return
             self.ctrl.set_analysis(result)
-            self._apply_auto()
+            self._apply_auto(analysed=True)
 
         self._set_busy(True)
         runner = ProgressRunner(self, tr("Auto edit"), tr("Analysing speech and board writing..."),
@@ -899,7 +908,7 @@ class MainWindow(QMainWindow):
         self._track_runner(runner)
         runner.start()
 
-    def _apply_auto(self) -> None:
+    def _apply_auto(self, analysed: bool = False) -> None:
         p = self.ctrl.project
         if p is None:
             return
@@ -912,6 +921,9 @@ class MainWindow(QMainWindow):
             s=fmt_duration(st["sped_source"]), c=fmt_duration(st["cut"]), n=int(st["review"]))
         if locked:
             msg += " " + tr("{n} manually edited segments were kept.").format(n=locked)
+        if analysed and p.analysis is not None:
+            msg = tr("Analysed as: {kind}.").format(kind=source_label(p.analysis.source)) \
+                + " " + msg
         self.statusBar().showMessage(msg, 20000)
         self.timeline.view.request_fit()
         if st["review_open"]:

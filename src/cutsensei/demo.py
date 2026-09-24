@@ -24,7 +24,10 @@ AUDIO_SR = 48000
 
 @dataclass
 class Scene:
-    kind: str          # "speech", "speech_writing", "writing", "idle", "walk"
+    # camera: "speech", "speech_writing", "writing", "idle", "walk"
+    # screen recordings additionally: "scroll", "page" (page turn), "laser"
+    # (silent laser pointer) and "speech_laser" (pointing while explaining)
+    kind: str
     duration: float
 
 
@@ -36,6 +39,11 @@ class DemoSpec:
     height: int = 360
     fps: int = 30
     seed: int = 7
+    style: str = "camera"      # "camera" (blackboard) or "screen" (tablet note app)
+    webcam: bool = False       # screen: picture-in-picture camera of the lecturer
+    clock_period: float = 60.0  # screen: the status bar clock changes this often
+    paper: str = "ruled"       # screen: "ruled", "dark" (dark mode) or "slides" (annotated PDF)
+    cursor: bool = False       # screen: a mouse pointer (PC recording with a pen tablet)
 
     @property
     def duration(self) -> float:
@@ -47,6 +55,15 @@ class DemoSpec:
             out.append((s.kind, t, t + s.duration))
             t += s.duration
         return out
+
+
+def screen_spec(scenes: Optional[List[Scene]] = None, **kw) -> DemoSpec:
+    """A tablet screen recording (GoodNotes-like note app, 4:3)."""
+    kw.setdefault("width", 960)
+    kw.setdefault("height", 720)
+    kw.setdefault("fps", 15)
+    return DemoSpec(scenes=scenes or [Scene("speech", 60.0), Scene("writing", 40.0),
+                                      Scene("idle", 20.0)], style="screen", **kw)
 
 
 # ----------------------------------------------------------------------------
@@ -130,10 +147,14 @@ def synth_audio(spec: DemoSpec) -> np.ndarray:
     audio = _room(n, rng)
     for kind, a, b in spec.scene_ranges():
         i0, i1 = int(a * AUDIO_SR), int(b * AUDIO_SR)
-        if kind in ("speech", "speech_writing"):
+        if kind in ("speech", "speech_writing", "speech_laser"):
             audio[i0:i1] += _speech(b - a, rng)[: i1 - i0]
         if kind in ("writing", "speech_writing"):
-            audio[i0:i1] += _chalk(b - a, rng)[: i1 - i0]
+            if spec.style == "screen":
+                # a stylus on glass: soft, sparse taps
+                audio[i0:i1] += 0.25 * _chalk(b - a, rng, rate=(1.0, 3.0))[: i1 - i0]
+            else:
+                audio[i0:i1] += _chalk(b - a, rng)[: i1 - i0]
         if kind == "walk":
             # footsteps: soft low thumps
             t = 0.3
@@ -197,6 +218,21 @@ class _Board:
         return int(self.pen[0]), int(self.pen[1])
 
 
+def _camera_look(w: int, h: int, rng: np.random.Generator) -> Tuple[np.ndarray, np.ndarray]:
+    """Uneven lighting (vignetting, light from one side) and a static surface
+    texture: what makes a camera image look like one."""
+    import cv2
+
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    r2 = ((xx - w / 2) / (w / 2)) ** 2 + ((yy - h / 2) / (h / 2)) ** 2
+    light = (0.80 + 0.20 * (1.0 - r2 / 2.0)) * (0.92 + 0.16 * xx / w)
+    light_q = (light * 256).astype(np.int32)[..., None]
+    grain = rng.normal(0, 4.0, (h, w)).astype(np.float32)
+    grain = cv2.GaussianBlur(grain, (0, 0), 1.2) * 1.8
+    texture = np.repeat(grain.round().astype(np.int32)[..., None], 3, axis=2)
+    return light_q, texture
+
+
 def _draw_person(frame: np.ndarray, x: float, h: int, arm_to: Optional[Tuple[int, int]],
                  bob: float) -> None:
     import cv2
@@ -214,14 +250,301 @@ def _draw_person(frame: np.ndarray, x: float, h: int, arm_to: Optional[Tuple[int
         cv2.line(frame, (cx + 22, body_top + 12), (cx + 30, body_top + 80), (70, 40, 40), 9)
 
 
+class _NoteApp:
+    """A tablet note taking app (GoodNotes, Notability, ...) as it appears in a
+    screen recording: status bar with a clock, a toolbar and a vertically
+    scrolling stack of ruled pages that the lecturer writes on with a stylus."""
+
+    STATUS_H = 22
+    TOOLBAR_H = 50
+    LINE = 38
+    SIDE = 34      # grey space left and right of the page
+    INK = ((110, 45, 25), (40, 40, 200), (30, 30, 30))   # BGR: navy, red, black
+
+    def __init__(self, spec: DemoSpec, rng: np.random.Generator) -> None:
+        self.w, self.h = spec.width, spec.height
+        self.rng = rng
+        self.paper = spec.paper
+        self.slide_no = 0
+        if self.paper == "dark":
+            self.INK = ((250, 250, 250), (120, 200, 255), (130, 230, 140))
+        self.top = self.STATUS_H + self.TOOLBAR_H
+        self.view_h = self.h - self.top
+        self.page_h = self.view_h * 3
+        self.page = self._blank_pages()
+        self.scroll = 0.0
+        self.scroll_from = self.scroll_to = 0.0
+        self.color = 0
+        self.laser: List[Tuple[float, int, int]] = []   # (time, x, y) in view pixels
+        self.turn_from: Optional[np.ndarray] = None       # view before a page turn
+        self._new_line(first=True)
+
+    # ------------------------------------------------------------ page
+    def _blank_pages(self) -> np.ndarray:
+        dark = self.paper == "dark"
+        page = np.full((self.page_h, self.w, 3), 18 if dark else 236, np.uint8)  # app background
+        x0, x1 = self.SIDE, self.w - self.SIDE
+        page_len = self.view_h + self.view_h // 2
+        for y0 in range(8, self.page_h, page_len + 16):
+            y1 = min(self.page_h, y0 + page_len)
+            if self.paper == "slides":
+                self._slide(page, x0, y0, x1, y1)
+                continue
+            page[y0:y1, x0:x1] = 40 if dark else 255
+            for y in range(y0 + 2 * self.LINE, y1 - 10, self.LINE):
+                page[y, x0 + 6:x1 - 6] = (70, 64, 58) if dark else (238, 222, 196)  # ruling
+            if not dark:
+                page[y0 + 4:y1 - 4, x0 + 44] = (210, 206, 250)           # margin line
+        return page
+
+    def _slide(self, page: np.ndarray, x0: int, y0: int, x1: int, y1: int) -> None:
+        """A lecture slide (title, bullet text and a photo) to write on."""
+        import cv2
+
+        self.slide_no += 1
+        page[y0:y1, x0:x1] = 255
+        page[y0:y0 + 54, x0:x1] = (120, 70, 20)
+        cv2.putText(page, f"Lecture 3 - Part {self.slide_no}", (x0 + 20, y0 + 38),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
+        for i in range(5):
+            y = y0 + 100 + i * 34
+            cv2.circle(page, (x0 + 28, y - 6), 4, (60, 60, 60), -1, cv2.LINE_AA)
+            cv2.putText(page, "Definition of the derivative and its limit"[:24 + 3 * i],
+                        (x0 + 42, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (40, 40, 40), 1, cv2.LINE_AA)
+        # a photo: textured, but static
+        pw, ph = (x1 - x0) // 3, (y1 - y0) // 4
+        px0, py0 = x1 - pw - 24, y0 + 80
+        yy, xx = np.mgrid[0:ph, 0:pw].astype(np.float32)
+        base = np.stack([90 + 60 * np.sin(xx / 17.0) * np.cos(yy / 23.0),
+                         120 + 50 * np.cos(xx / 29.0), 150 + 40 * np.sin(yy / 13.0)], -1)
+        tex = self.rng.normal(0, 12, (ph, pw, 1))
+        page[py0:py0 + ph, px0:px0 + pw] = np.clip(base + tex, 0, 255).astype(np.uint8)
+
+    def _new_line(self, first: bool = False) -> None:
+        top = int(self.scroll)
+        if first:
+            self.cy = top + 3 * self.LINE + 8
+        else:
+            self.cy += self.LINE
+        base = 8 + 2 * self.LINE
+        self.cy = base + max(0, round((self.cy - base) / self.LINE)) * self.LINE - 5
+        if self.cy > top + self.view_h - 20 or self.cy < top + 40:
+            self.cy = base + max(0, round((top + 60 - base) / self.LINE)) * self.LINE - 5
+        self.cx = self.SIDE + 60
+        self.pen = np.array([self.cx, self.cy - 10], float)
+        self.heading = 0.0
+
+    def write_step(self, amount: float) -> Tuple[int, int]:
+        """Advance the handwriting by ``amount`` pixels of stroke; returns the
+        pen position in view coordinates."""
+        import cv2
+
+        remaining = amount
+        color = self.INK[self.color]
+        while remaining > 0:
+            if self.rng.random() < 0.05:           # next glyph (pen lifted)
+                self.cx += int(self.rng.integers(18, 30))
+                if self.cx > self.w - self.SIDE - 40:
+                    self._new_line()
+                self.pen = np.array([self.cx + self.rng.uniform(0, 10),
+                                     self.cy + self.rng.uniform(-18, 0)])
+                self.heading = self.rng.uniform(0, 2 * np.pi)
+            # smooth, curved strokes: the direction changes gradually
+            self.heading += self.rng.normal(0, 0.55)
+            step = self.rng.uniform(2.5, 4.5)
+            nxt = self.pen + step * np.array([np.cos(self.heading), np.sin(self.heading)])
+            lo = np.array([self.cx - 2, self.cy - 24])
+            hi = np.array([self.cx + 20, self.cy + 1])
+            if np.any(nxt < lo) or np.any(nxt > hi):
+                self.heading += np.pi * self.rng.uniform(0.6, 1.0)   # turn back at the edge
+                nxt = np.clip(nxt, lo, hi)
+            cv2.line(self.page, (int(self.pen[0]), int(self.pen[1])),
+                     (int(nxt[0]), int(nxt[1])), color, 2, cv2.LINE_AA)
+            self.pen = nxt
+            remaining -= step
+        return int(self.pen[0]), int(self.pen[1] - self.scroll)
+
+    def start_scroll(self, distance: float) -> None:
+        self.scroll_from = self.scroll
+        self.scroll_to = float(np.clip(self.scroll + distance, 0, self.page_h - self.view_h))
+
+    def scroll_progress(self, p: float) -> None:
+        p = min(1.0, max(0.0, p))
+        ease = p * p * (3 - 2 * p)
+        self.scroll = self.scroll_from + (self.scroll_to - self.scroll_from) * ease
+        if p >= 1.0 and not (self.scroll + 40 <= self.cy <= self.scroll + self.view_h - 20):
+            self._new_line(first=True)
+
+    def turn_page(self) -> None:
+        self.turn_from = self.view().copy()
+        self.page = self._blank_pages()
+        self.scroll = self.scroll_from = self.scroll_to = 0.0
+        self._new_line(first=True)
+
+    def view(self) -> np.ndarray:
+        y = int(round(self.scroll))
+        return self.page[y:y + self.view_h]
+
+    # ------------------------------------------------------------ frame
+    def chrome(self, t: float, period: float) -> np.ndarray:
+        import cv2
+
+        bar = np.full((self.top, self.w, 3), 248, np.uint8)
+        bar[self.STATUS_H:] = 242
+        bar[self.top - 1] = 205
+        if self.paper == "dark":
+            bar[:] = 30
+            bar[self.STATUS_H:] = 38
+        minute = 41 + int(t // max(1e-6, period))
+        fg = (230, 230, 230) if self.paper == "dark" else (20, 20, 20)
+        cv2.putText(bar, f"10:{minute % 60:02d}", (12, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                    fg, 1, cv2.LINE_AA)
+        cv2.rectangle(bar, (self.w - 44, 6), (self.w - 18, 15), (20, 20, 20), 1)
+        cv2.rectangle(bar, (self.w - 42, 8), (self.w - 25, 13), (20, 20, 20), -1)
+        y = self.STATUS_H + self.TOOLBAR_H // 2
+        for i in range(6):                                      # tool icons
+            x = 30 + i * 44
+            cv2.rectangle(bar, (x - 11, y - 11), (x + 11, y + 11), (120, 120, 120), 2)
+        for i, col in enumerate(self.INK):                      # pen colours
+            x = self.w // 2 + i * 34
+            cv2.circle(bar, (x, y), 10, col, -1, cv2.LINE_AA)
+            if i == self.color:
+                cv2.circle(bar, (x, y), 14, (200, 140, 60), 2, cv2.LINE_AA)
+        return bar
+
+    def render(self, t: float, period: float, turn: float = 1.0) -> np.ndarray:
+        import cv2
+
+        frame = np.empty((self.h, self.w, 3), np.uint8)
+        frame[:self.top] = self.chrome(t, period)
+        view = self.view()
+        if self.turn_from is not None and turn < 1.0:        # page sliding in
+            p = turn * turn * (3 - 2 * turn)
+            off = int(round(p * self.w))
+            body = np.empty_like(view)
+            body[:, :self.w - off] = self.turn_from[:, off:]
+            body[:, self.w - off:] = view[:, :off]
+            frame[self.top:] = body
+        else:
+            frame[self.top:] = view
+        # laser pointer: a red dot with a fading trail
+        pts = [(tt, x, y) for tt, x, y in self.laser if t - tt <= 0.6]
+        self.laser = pts
+        body = frame[self.top:]
+        for k in range(1, len(pts)):
+            age = t - pts[k][0]
+            fade = max(0.0, 1.0 - age / 0.6)
+            col = (int(255 - 200 * fade), int(255 - 200 * fade), 255)
+            cv2.line(body, pts[k - 1][1:], pts[k][1:], col, max(1, int(6 * fade)), cv2.LINE_AA)
+        if pts and t - pts[-1][0] < 0.1:
+            cv2.circle(body, pts[-1][1:], 7, (40, 40, 255), -1, cv2.LINE_AA)
+        return frame
+
+
+class _Webcam:
+    """Picture-in-picture camera image of the lecturer (sensor noise, motion)."""
+
+    def __init__(self, spec: DemoSpec, rng: np.random.Generator) -> None:
+        self.w = int(spec.width * 0.22) // 2 * 2
+        self.h = int(self.w * 0.75) // 2 * 2
+        self.x0 = spec.width - self.w - 12
+        self.y0 = spec.height - self.h - 12
+        yy, xx = np.mgrid[0:self.h, 0:self.w]
+        base = np.zeros((self.h, self.w, 3), np.float32)
+        base[:] = (150, 140, 128)
+        base *= (1.0 - 0.25 * ((xx - self.w / 2) ** 2 + (yy - self.h / 2) ** 2)
+                 / (self.w ** 2 / 4))[..., None]                    # vignetting
+        self.base = base.astype(np.uint8)
+        self.noise = [rng.normal(0, 3.0, (self.h, self.w, 3)).round().astype(np.int16)
+                      for _ in range(7)]
+
+    def draw(self, frame: np.ndarray, t: float, fi: int, talking: bool) -> None:
+        import cv2
+
+        img = self.base.copy()
+        cx = int(self.w / 2 + 8 * math.sin(t * 0.7))
+        cy = int(self.h * 0.45 + 2 * math.sin(t * 2.1))
+        cv2.ellipse(img, (cx, self.h + 10), (int(self.w * 0.32), int(self.h * 0.35)), 0, 180,
+                    360, (60, 50, 45), -1, cv2.LINE_AA)                   # shoulders
+        cv2.circle(img, (cx, cy), int(self.h * 0.2), (140, 165, 205), -1, cv2.LINE_AA)
+        cv2.ellipse(img, (cx, cy - int(self.h * 0.08)), (int(self.h * 0.21), int(self.h * 0.14)),
+                    0, 180, 360, (35, 30, 28), -1, cv2.LINE_AA)           # hair
+        if talking:
+            m = int(3 + 3 * abs(math.sin(t * 9)))
+            cv2.ellipse(img, (cx, cy + int(self.h * 0.1)), (8, m), 0, 0, 360, (60, 60, 120), -1)
+        img = np.clip(img.astype(np.int16) + self.noise[fi % len(self.noise)], 0, 255)
+        frame[self.y0:self.y0 + self.h, self.x0:self.x0 + self.w] = img.astype(np.uint8)
+        cv2.rectangle(frame, (self.x0 - 1, self.y0 - 1), (self.x0 + self.w, self.y0 + self.h),
+                      (80, 80, 80), 1)
+
+
+
+def _draw_cursor(frame: np.ndarray, x: int, y: int) -> None:
+    import cv2
+
+    pts = np.array([[x, y], [x, y + 18], [x + 5, y + 14], [x + 9, y + 21], [x + 12, y + 20],
+                    [x + 8, y + 13], [x + 14, y + 13]], np.int32)
+    cv2.fillPoly(frame, [pts], (255, 255, 255), cv2.LINE_AA)
+    cv2.polylines(frame, [pts], True, (0, 0, 0), 1, cv2.LINE_AA)
+
+
+def _screen_frames(spec: DemoSpec, rng: np.random.Generator):
+    """Yield the frames of a screen recording of a note app."""
+    app = _NoteApp(spec, rng)
+    cam = _Webcam(spec, rng) if spec.webcam else None
+    fps = spec.fps
+    ranges = spec.scene_ranges()
+    total = int(round(spec.duration * fps))
+    scene_idx = -1
+    for fi in range(total):
+        t = fi / fps
+        k = next((i for i, (_k, a, b) in enumerate(ranges) if a <= t < b), len(ranges) - 1)
+        kind, a, b = ranges[k]
+        if k != scene_idx:                          # entering a new scene
+            scene_idx = k
+            if kind == "scroll":
+                app.start_scroll(app.view_h * 0.6)
+            elif kind == "page":
+                app.turn_page()
+            elif kind in ("writing", "speech_writing") and rng.random() < 0.3:
+                app.color = (app.color + 1) % len(app.INK)
+        turn = 1.0
+        if kind in ("writing", "speech_writing"):
+            if rng.random() > 0.08:                 # short pen lifts
+                app.write_step(rng.uniform(5, 16))
+        elif kind == "scroll":
+            app.scroll_progress((t - a) / 1.2)
+        elif kind == "page":
+            turn = (t - a) / 0.5
+        elif kind in ("laser", "speech_laser", "walk"):
+            x = int(app.w * (0.5 + 0.35 * math.sin(t * 1.3)))
+            y = int(app.view_h * (0.45 + 0.3 * math.sin(t * 2.1 + 0.5)))
+            app.laser.append((t, x, y))
+        frame = app.render(t, spec.clock_period, turn)
+        if spec.cursor:
+            if kind in ("writing", "speech_writing"):
+                cur = (app.pen[0], app.pen[1] - app.scroll)       # the pen drives the pointer
+            elif kind.startswith("speech"):
+                cur = (app.w * (0.5 + 0.3 * math.sin(t * 0.8)), app.view_h * (0.5 + 0.2 * math.sin(t * 0.5)))
+            else:                                                  # resting hand: a small drift
+                cur = (app.w * 0.6 + 6 * math.sin(t * 0.9), app.view_h * 0.55 + 4 * math.sin(t * 0.6))
+            _draw_cursor(frame, int(cur[0]), int(cur[1]) + app.top)
+        if cam is not None:
+            cam.draw(frame, t, fi, talking=kind.startswith("speech"))
+        yield frame
+
+
 def generate_demo(path: str, spec: Optional[DemoSpec] = None,
-                  crf: int = 26) -> DemoSpec:
-    """Render the demo lecture to ``path`` (mp4, H.264 + AAC)."""
+                  crf: Optional[int] = None, vfr: bool = False) -> DemoSpec:
+    """Render the demo lecture to ``path`` (mp4, H.264 + AAC).  With ``vfr``
+    repeated frames are dropped like an iPad screen recording does."""
     import os
     import tempfile
     import wave
 
     spec = spec or DemoSpec()
+    if crf is None:
+        crf = 24 if spec.style == "screen" else 26
     rng = np.random.default_rng(spec.seed)
     audio = synth_audio(spec)
     fd, wav_path = tempfile.mkstemp(suffix=".wav")
@@ -236,12 +559,33 @@ def generate_demo(path: str, spec: Optional[DemoSpec] = None,
     cmd = [ffmpeg.find_ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
            "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}", "-r", str(fps),
            "-i", "pipe:0", "-i", wav_path, "-c:v", "libx264", "-preset", "veryfast",
-           "-crf", str(crf), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
-           "-shortest", path]
+           "-crf", str(crf), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k"]
+    if vfr:
+        cmd += ["-vf", "mpdecimate", "-fps_mode", "vfr"]
+    else:
+        cmd += ["-shortest"]
+    cmd += [path]
     proc = ffmpeg.popen(cmd, stdin=subprocess.PIPE)
+    if spec.style == "screen":
+        try:
+            assert proc.stdin is not None
+            for frame in _screen_frames(spec, rng):
+                proc.stdin.write(frame.tobytes())
+            proc.stdin.close()
+            if proc.wait() != 0:
+                raise RuntimeError("ffmpeg failed while encoding the demo video")
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            try:
+                os.unlink(wav_path)
+            except OSError:
+                pass
+        return spec
     board = _Board(spec, rng)
     # pre-computed sensor noise (cycled; cheaper than fresh noise per frame)
     noise_bank = [rng.normal(0, 2.0, (h, w, 3)).round().astype(np.int16) for _ in range(7)]
+    light, texture = _camera_look(w, h, np.random.default_rng(spec.seed + 1000))
     person_x = w * 0.3
     target_x = person_x
     arm: Optional[Tuple[int, int]] = None
@@ -274,7 +618,8 @@ def generate_demo(path: str, spec: Optional[DemoSpec] = None,
             frame[board.ink.astype(bool)] = (225, 228, 230)
             _draw_person(frame, person_x, h, arm, bob)
             noise = noise_bank[fi % len(noise_bank)]
-            frame = np.clip(frame.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+            lit = (frame.astype(np.int32) * light) >> 8
+            frame = np.clip(lit + texture + noise, 0, 255).astype(np.uint8)
             assert proc.stdin is not None
             proc.stdin.write(frame.tobytes())
         assert proc.stdin is not None
@@ -292,5 +637,17 @@ def generate_demo(path: str, spec: Optional[DemoSpec] = None,
 
 
 def board_region(spec: DemoSpec) -> List[float]:
-    """Normalized board rectangle of the demo video."""
+    """Normalized board rectangle of the demo video (for a screen recording:
+    the page area below the toolbar)."""
+    if spec.style == "screen":
+        top = (_NoteApp.STATUS_H + _NoteApp.TOOLBAR_H) / spec.height
+        return [0.0, round(top, 4), 1.0, round(1.0 - top, 4)]
     return [0.08, 0.08, 0.84, 0.64]
+
+
+def webcam_rect(spec: DemoSpec) -> List[float]:
+    """Normalized rectangle of the picture-in-picture camera (screen demo)."""
+    w = int(spec.width * 0.22) // 2 * 2
+    h = int(w * 0.75) // 2 * 2
+    return [(spec.width - w - 12) / spec.width, (spec.height - h - 12) / spec.height,
+            w / spec.width, h / spec.height]

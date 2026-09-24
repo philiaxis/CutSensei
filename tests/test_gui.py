@@ -324,3 +324,39 @@ def test_set_edges_to_playhead(window, qtbot, short_video):
     assert window.engine.mode == "source" and tv.mode == "source"
     window.a_toggle_mode.trigger()
     assert window.engine.mode == "edited"
+
+
+@pytest.mark.slow
+def test_recording_type_setting(window, qtbot, screen_webcam_video):
+    """The detected recording type is shown; choosing another one analyses the
+    video again when the edit is re-applied."""
+    from cutsensei.core.settings import SourceType
+
+    path, _spec = screen_webcam_video
+    window.import_video(path)
+    qtbot.waitUntil(lambda: window.engine._loaded, timeout=15000)
+    panel = window.props.auto
+    assert panel.source.currentData() == SourceType.AUTO
+    assert "analysed" in panel.source_hint.text()
+    window.run_auto_edit()
+    qtbot.waitUntil(lambda: window.ctrl.project.auto_applied, timeout=120000)
+    qtbot.waitUntil(lambda: not window._busy, timeout=10000)
+    p = window.ctrl.project
+    assert p.analysis.source == "screen"
+    assert "Screen recording" in panel.source_hint.text()
+    qtbot.waitUntil(lambda: "Screen recording" in window.media_panel.meta_label.text(),
+                    timeout=3000)
+    assert window.ctrl.analysis_is_current()
+
+    panel.source.setCurrentIndex(panel.source.findData(SourceType.CAMERA))
+    assert p.settings.source_type == SourceType.CAMERA
+    assert not window.ctrl.analysis_is_current() and window.ctrl.settings_pending
+    assert "again" in panel.source_hint.text()
+    window.run_auto_edit()
+    qtbot.waitUntil(lambda: not window._busy and window.ctrl.analysis_is_current(),
+                    timeout=120000)
+    assert window.ctrl.project.analysis.source == "camera"
+    # undo brings back the automatic choice, which matches the first analysis again
+    window.a_undo.trigger()
+    window.a_undo.trigger()
+    assert window.ctrl.project.settings.source_type == SourceType.AUTO

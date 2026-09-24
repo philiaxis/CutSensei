@@ -7,7 +7,7 @@ import sys
 from typing import List, Optional
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QPen
+from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
                                QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
                                QPushButton, QSlider, QVBoxLayout, QWidget)
@@ -51,6 +51,7 @@ class RegionCanvas(QWidget):
         self.setMinimumSize(560, 315)
         self.image: Optional[QImage] = None
         self.regions: List[List[float]] = []
+        self.excluded: List[List[float]] = []   # ignored automatically (webcam picture)
         self.selected = -1
         self._drag = None
 
@@ -115,6 +116,14 @@ class RegionCanvas(QWidget):
                 path = path.subtracted(inner)
             p.fillPath(path, theme.color("#000000", 120))
             p.restore()
+        for reg in self.excluded:
+            rp = self._rect_px(reg)
+            p.fillRect(rp, QBrush(theme.color(theme.CUT, 150), Qt.BDiagPattern))
+            p.setPen(QPen(QColor(theme.CUT), 1, Qt.DotLine))
+            p.drawRect(rp)
+            p.setPen(QColor("#ffffff"))
+            p.drawText(rp.adjusted(4, 2, -2, 0), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap,
+                       tr("Camera picture (ignored)"))
         p.setRenderHint(QPainter.Antialiasing)
         for i, reg in enumerate(self.regions):
             rp = self._rect_px(reg)
@@ -211,7 +220,8 @@ class RegionCanvas(QWidget):
 
 class BoardRegionDialog(QDialog):
     def __init__(self, media: MediaInfo, regions: List[List[float]], position: float,
-                 parent: Optional[QWidget] = None) -> None:
+                 parent: Optional[QWidget] = None,
+                 excluded: Optional[List[List[float]]] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(tr("Board region"))
         self.media = media
@@ -219,12 +229,16 @@ class BoardRegionDialog(QDialog):
         info = QLabel(tr("Mark the blackboard / whiteboard with one or more rectangles. Only "
                          "these areas are used to detect writing, so movement elsewhere (the "
                          "audience, a door, a screen) is ignored. Without a region the whole "
-                         "frame is used."))
+                         "frame is used.") + "\n" +
+                      tr("Screen recordings of digital notes: mark the page area without the "
+                         "app's toolbars and status bar. A camera picture of the lecturer is "
+                         "found and ignored automatically."))
         info.setWordWrap(True)
         info.setObjectName("dim")
         lay.addWidget(info)
         self.canvas = RegionCanvas()
         self.canvas.regions = [list(r) for r in regions]
+        self.canvas.excluded = [list(r) for r in (excluded or [])]
         lay.addWidget(self.canvas, 1)
         row = QHBoxLayout()
         row.addWidget(QLabel(tr("Frame")))

@@ -75,3 +75,9 @@ REASONS = {
 
 def reason_label(reason: str) -> str:
     return tr(REASONS.get(reason, reason or "-"))
+
+
+def source_label(kind: str) -> str:
+    """Name of a recording type (``camera`` / ``screen``)."""
+    return {"camera": tr("Camera recording (blackboard / whiteboard)"),
+            "screen": tr("Screen recording (digital notes)")}.get(kind, kind)

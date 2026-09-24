@@ -12,7 +12,7 @@ from typing import Iterable, List, Optional, Sequence
 from PySide6.QtCore import QObject, Signal
 
 from ..analysis.classifier import regenerate
-from ..analysis.result import regions_signature
+from ..analysis.result import regions_signature, video_analysis_current
 from ..core.history import History
 from ..core.project import Project
 from ..core.settings import AutoEditSettings
@@ -349,10 +349,11 @@ class ProjectController(QObject):
         self._changed(timeline=False, settings=True)
 
     def analysis_is_current(self) -> bool:
+        """True when the analysis matches the board regions and recording type."""
         p = self.project
-        if p is None or p.analysis is None:
+        if p is None:
             return False
-        return regions_signature(p.analysis.board_regions) == regions_signature(p.board_regions)
+        return video_analysis_current(p.analysis, p.board_regions, p.settings.source_type)
 
     def set_analysis(self, analysis) -> None:
         if not self.project:

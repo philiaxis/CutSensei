@@ -106,15 +106,25 @@ def compute_scores(res: AnalysisResult) -> Scores:
     ink_score = 1.0 - np.exp(-_smooth(ink, 2 * fr) / 80.0)
     click_score = 1.0 - np.exp(-_smooth(res.clicks, 2 * fr) / 2.5)
     hand = _smooth(np.clip(res.hand, 0, 1), 2 * fr)
-    if res.has_video_features:
+    screen = res.source == "screen"
+    if res.has_video_features and screen:
+        # Digital notes: every visible change is known exactly.  Scrolling and
+        # page turns belong to working on the notes (a silent page turn is
+        # kept briefly, silent browsing through pages is sped up); the sound
+        # of a stylus or keyboard is only weak evidence.
+        nav_score = np.clip(_smooth(np.clip(res.nav, 0, 1), fr) * 2.0, 0, 1)
+        writing = ink_score + 0.8 * nav_score + 0.15 * click_score
+    elif res.has_video_features:
         writing = ink_score + 0.35 * click_score + 0.1 * hand
     else:
         writing = 0.8 * click_score
     writing = np.clip(writing, 0, 1)
     # a sudden global change (lights, camera) is not writing
-    if len(res.global_change):
+    if len(res.global_change) and not screen:
         writing = np.where(_smooth(res.global_change, fr) > 0.3, 0.0, writing)
-    activity = np.clip(_smooth(res.motion, fr) / 0.01, 0, 1)
+    # silent movement: a person walking (camera); a laser pointer or dragged
+    # object, but not a small mouse cursor (screen recording)
+    activity = np.clip(_smooth(res.motion, fr) / (0.004 if screen else 0.01), 0, 1)
     return Scores(speech.astype(np.float32), writing.astype(np.float32),
                   activity.astype(np.float32))
 

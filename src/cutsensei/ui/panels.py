@@ -14,10 +14,11 @@ from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComb
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ..analysis.thumbnails import thumbnail_path
-from ..core.settings import AutoEditSettings, SpeedAudio, VadEngine
+from ..core.settings import AutoEditSettings, SourceType, SpeedAudio, VadEngine
 from ..core.timeline import Action
 from . import icons, theme
-from .fmt import (action_label, fmt_duration, fmt_time, kind_label, reason_label)
+from .fmt import (action_label, fmt_duration, fmt_time, kind_label, reason_label,
+                  source_label)
 from .i18n import tr
 
 
@@ -208,6 +209,8 @@ class MediaPanel(QTabWidget):
                 parts.append(tr("no audio"))
             if not p.media_exists:
                 parts.append(tr("source file missing!"))
+            if p.analysis is not None:
+                parts.append(source_label(p.analysis.source))
             self.meta_label.setText(" · ".join(parts))
             st = p.timeline.stats(p.settings)
             analysed = p.auto_applied
@@ -599,6 +602,21 @@ class AutoEditPanel(QScrollArea):
         lay.setContentsMargins(12, 12, 12, 12)
         lay.setSpacing(10)
 
+        lay.addWidget(_heading(tr("Recording type")))
+        self.source = QComboBox()
+        self.source.addItem(tr("Automatic"), SourceType.AUTO)
+        self.source.addItem(tr("Camera (blackboard, whiteboard)"), SourceType.CAMERA)
+        self.source.addItem(tr("Screen recording (digital notes)"), SourceType.SCREEN)
+        self.source.setToolTip(tr(
+            "Camera: a classroom recording of a blackboard, whiteboard or electronic board.\n"
+            "Screen recording: GoodNotes, Notability, OneNote, a whiteboard app or slides "
+            "written on with a pen, recorded on a tablet or PC."))
+        lay.addWidget(self.source)
+        self.source_hint = QLabel()
+        self.source_hint.setObjectName("dim")
+        self.source_hint.setWordWrap(True)
+        lay.addWidget(self.source_hint)
+
         lay.addWidget(_heading(tr("Board writing speed")))
         row = QHBoxLayout()
         self.speed_slider = QSlider(Qt.Horizontal)
@@ -730,6 +748,8 @@ class AutoEditPanel(QScrollArea):
         self.pad_before.valueChanged.connect(lambda v: self._set(pad_before=float(v)))
         self.pad_after.valueChanged.connect(lambda v: self._set(pad_after=float(v)))
         self.speed_audio.currentIndexChanged.connect(self._audio_changed)
+        self.source.currentIndexChanged.connect(
+            lambda _i: self._set(source_type=self.source.currentData()))
         self.speed_audio_vol.valueChanged.connect(
             lambda v: self._set(speed_audio_volume=v / 100.0))
         for name, w in (("min_cut", self.min_cut), ("min_speed", self.min_speed),
@@ -747,6 +767,7 @@ class AutoEditPanel(QScrollArea):
         self.reset_btn.clicked.connect(self._reset)
         controller.settingsChanged.connect(self.refresh)
         controller.projectChanged.connect(self.refresh)
+        controller.analysisChanged.connect(self.refresh)
         self.refresh()
 
     def _toggle_adv(self, on: bool) -> None:
@@ -789,6 +810,23 @@ class AutoEditPanel(QScrollArea):
         if self.ctrl.has_project:
             self.ctrl.replace_settings(AutoEditSettings())
 
+    def _source_hint(self) -> str:
+        p = self.ctrl.project
+        if p is None:
+            return ""
+        a = p.analysis
+        chosen = p.settings.source_type
+        if a is None:
+            return tr("Detected when the video is analysed.") if chosen == SourceType.AUTO else ""
+        lines = []
+        if chosen == SourceType.AUTO or a.source_detected != chosen:
+            lines.append(tr("Detected: {kind}").format(kind=source_label(a.source_detected)))
+        if not self.ctrl.analysis_is_current():
+            lines.append(tr("Press \"Re-apply auto edit\" to analyse the video again."))
+        elif a.source == SourceType.SCREEN and a.live_rects:
+            lines.append(tr("A camera picture in the recording is ignored."))
+        return "\n".join(lines)
+
     def refresh(self) -> None:
         st = self.ctrl.settings
         self._loading = True
@@ -815,6 +853,9 @@ class AutoEditPanel(QScrollArea):
             self.review_band.set_value_or_none(st.review_band, st.eff_review_band)
             self.motion_unc.setChecked(st.motion_is_uncertain)
             self.vad.setCurrentIndex(max(0, self.vad.findData(st.vad_engine)))
+            self.source.setCurrentIndex(max(0, self.source.findData(st.source_type)))
+            self.source_hint.setText(self._source_hint())
+            self.source_hint.setVisible(bool(self.source_hint.text()))
             p = self.ctrl.project
             analysed = bool(p and p.auto_applied)
             self.apply_btn.setText(tr("Re-apply auto edit") if analysed else tr("Run auto edit"))

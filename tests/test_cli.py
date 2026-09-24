@@ -40,3 +40,28 @@ def test_bad_board_argument(short_video):
     path, _ = short_video
     with pytest.raises(SystemExit):
         main(["analyze", path, "--board", "0.1,0.2"])
+
+
+@pytest.mark.slow
+def test_screen_recording_source_option(screen_webcam_video, tmp_path, capsys):
+    path, _spec = screen_webcam_video
+    proj = str(tmp_path / "notes.cutsensei")
+    assert main(["-q", "analyze", path, "-o", proj]) == 0
+    out = capsys.readouterr().out
+    assert "recording   : screen (detected, camera picture ignored)" in out
+    p = Project.load(proj)
+    assert p.analysis.source == "screen" and p.settings.source_type == "auto"
+    # forcing the other type is honoured (and remembered in the project)
+    assert main(["-q", "analyze", path, "-o", proj, "--source", "camera"]) == 0
+    assert "recording   : camera (chosen)" in capsys.readouterr().out
+    p = Project.load(proj)
+    assert p.analysis.source == "camera" and p.settings.source_type == "camera"
+    assert p.analysis.source_detected == "screen"
+
+
+def test_demo_screen_scenario(tmp_path, capsys):
+    out = str(tmp_path / "notes.mp4")
+    assert main(["demo", out, "--scenario", "screen"]) == 0
+    info = probe(out)
+    assert info.width == 960 and info.height == 720
+    assert info.duration == pytest.approx(120.0, abs=0.2)

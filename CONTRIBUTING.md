@@ -31,7 +31,7 @@ GUI tests run with `QT_QPA_PLATFORM=offscreen` (set automatically in `tests/conf
 | Path | Contents |
 |---|---|
 | `src/cutsensei/core/` | segments and edit map (`timeline.py`), settings, project files, undo, FFmpeg helpers, media probing |
-| `src/cutsensei/analysis/` | audio features and VAD, board writing tracker, classifier, pipeline, thumbnails |
+| `src/cutsensei/analysis/` | audio features and VAD, camera / screen recording detection (`source.py`), board writing tracker (`video.py`), digital notes tracker (`screen.py`), classifier, pipeline, thumbnails |
 | `src/cutsensei/render/` | export: filter graph, WSOLA audio rendering, encoder selection |
 | `src/cutsensei/ui/` | PySide6 user interface (no business logic; edits go through `controller.py`) |
 | `src/cutsensei/cli.py` | command line interface |

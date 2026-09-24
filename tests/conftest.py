@@ -53,6 +53,36 @@ def short_video(tmp_path_factory):
     return path, spec
 
 
+@pytest.fixture(scope="session")
+def screen_demo_video(tmp_path_factory):
+    """The 60 s / 40 s / 20 s scenario as a tablet screen recording, analysed."""
+    from cutsensei.analysis.pipeline import analyze
+    from cutsensei.core.media import probe
+    from cutsensei.demo import generate_demo, screen_spec
+
+    path = str(tmp_path_factory.mktemp("screen") / "notes.mp4")
+    generate_demo(path, screen_spec())
+    media = probe(path)
+    return media, analyze(media, [])
+
+
+@pytest.fixture(scope="session")
+def screen_webcam_video(tmp_path_factory):
+    """A screen recording with a webcam picture, laser pointer, scrolling, a page
+    turn and a status bar clock that changes every 15 s."""
+    from cutsensei.demo import Scene, generate_demo, screen_spec
+
+    path = str(tmp_path_factory.mktemp("screen_mixed") / "notes_webcam.mp4")
+    spec = screen_spec([Scene("speech", 10), Scene("speech_laser", 6), Scene("writing", 12),
+                        Scene("idle", 10), Scene("speech_writing", 8), Scene("scroll", 3),
+                        Scene("writing", 10), Scene("page", 2), Scene("writing", 6),
+                        Scene("idle", 10), Scene("laser", 6), Scene("idle", 8),
+                        Scene("speech", 6)], webcam=True, clock_period=15, width=800,
+                       height=600)
+    generate_demo(path, spec)
+    return path, spec
+
+
 def _frame_pattern(n: int, w: int, h: int) -> np.ndarray:
     """16 bit frame counter as 8x2 black/white blocks."""
     img = np.zeros((h, w, 3), np.uint8)

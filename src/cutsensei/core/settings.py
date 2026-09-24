@@ -19,6 +19,15 @@ class SpeedAudio:
     ALL = (KEEP, VOLUME, MUTE)
 
 
+class SourceType:
+    """What kind of recording the lecture is."""
+    AUTO = "auto"        # detected from the video
+    CAMERA = "camera"    # camera filming a blackboard / whiteboard / electronic board
+    SCREEN = "screen"    # screen recording of digital notes (GoodNotes, OneNote, ...)
+
+    ALL = (AUTO, CAMERA, SCREEN)
+
+
 class VadEngine:
     AUTO = "auto"        # Silero (neural) when available, otherwise DSP
     SILERO = "silero"
@@ -36,6 +45,7 @@ class AutoEditSettings:
     pad_after: float = 0.40              # protective margin after speech (s)
     speed_audio: str = SpeedAudio.KEEP
     speed_audio_volume: float = 0.4      # used with SpeedAudio.VOLUME
+    source_type: str = SourceType.AUTO   # camera or screen recording (needs re-analysis)
 
     # --- advanced settings (None = derived from aggressiveness) -------------
     min_cut: Optional[float] = None          # shortest idle span that is removed (s)
@@ -119,6 +129,8 @@ class AutoEditSettings:
             obj.speed_audio = SpeedAudio.KEEP
         if obj.vad_engine not in VadEngine.ALL:
             obj.vad_engine = VadEngine.AUTO
+        if obj.source_type not in SourceType.ALL:
+            obj.source_type = SourceType.AUTO
         return obj
 
 

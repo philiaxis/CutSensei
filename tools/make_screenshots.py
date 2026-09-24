@@ -30,23 +30,33 @@ def main() -> int:
     from cutsensei.analysis.pipeline import analyze
     from cutsensei.core.media import probe
     from cutsensei.core.project import Project
-    from cutsensei.demo import DemoSpec, Scene, board_region, generate_demo
+    from cutsensei.demo import DemoSpec, Scene, board_region, generate_demo, screen_spec
 
-    video = os.path.join(tmp, "lecture.mp4")
+    def build(name, spec, regions):
+        video = os.path.join(tmp, name + ".mp4")
+        generate_demo(video, spec)
+        media = probe(video)
+        proj = Project(media)
+        proj.name = name
+        proj.board_regions = regions
+        proj.analysis = analyze(media, proj.board_regions)
+        proj.timeline = regenerate(proj.timeline, proj.analysis, proj.settings)
+        proj.auto_applied = True
+        path = os.path.join(tmp, name + ".cutsensei")
+        proj.save(path)
+        return path
+
     spec = DemoSpec(scenes=[Scene("speech", 15), Scene("speech_writing", 15),
                             Scene("writing", 20), Scene("walk", 8), Scene("idle", 12),
                             Scene("speech", 10), Scene("writing", 10), Scene("idle", 6),
                             Scene("speech", 8)], width=960, height=540)
-    generate_demo(video, spec)
-    media = probe(video)
-    proj = Project(media)
-    proj.name = "lecture"
-    proj.board_regions = [board_region(spec)]
-    proj.analysis = analyze(media, proj.board_regions)
-    proj.timeline = regenerate(proj.timeline, proj.analysis, proj.settings)
-    proj.auto_applied = True
-    proj_path = os.path.join(tmp, "lecture.cutsensei")
-    proj.save(proj_path)
+    proj_path = build("lecture", spec, [board_region(spec)])
+    sspec = screen_spec([Scene("speech", 12), Scene("speech_laser", 8), Scene("writing", 15),
+                         Scene("idle", 10), Scene("speech_writing", 10), Scene("scroll", 3),
+                         Scene("writing", 12), Scene("page", 2), Scene("idle", 12),
+                         Scene("laser", 6), Scene("speech", 10), Scene("writing", 10),
+                         Scene("idle", 8)], webcam=True, width=1024, height=768)
+    screen_path = build("notes", sspec, [])
 
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
@@ -90,6 +100,24 @@ def main() -> int:
         app.processEvents()
         ex.grab().save(os.path.join(args.outdir, f"export{suffix}.png"))
         ex.close()
+        win.ctrl.project.dirty = False
+        win.open_project(screen_path)
+        win.props.setCurrentIndex(1)
+        # source time, while writing after the scroll (once the new video has loaded)
+        QTimer.singleShot(1200, lambda: win.engine.seek(64.0))
+        QTimer.singleShot(2800, finish_screen)
+
+    def finish_screen() -> None:
+        win.grab().save(os.path.join(args.outdir, f"main_screen{suffix}.png"))
+        p = win.ctrl.project
+        dlg = BoardRegionDialog(p.media, p.board_regions, 62.0, win,
+                                excluded=p.analysis.live_rects)
+        dlg.resize(900, 700)
+        dlg.show()
+        dlg._load_frame()
+        app.processEvents()
+        dlg.grab().save(os.path.join(args.outdir, f"board_region_screen{suffix}.png"))
+        dlg.close()
         win.ctrl.project.dirty = False
         app.quit()
 

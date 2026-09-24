@@ -5,6 +5,7 @@ Examples::
     cutsensei-cli info
     cutsensei-cli auto lecture.mp4 -o lecture_edited.mp4 --speed 4
     cutsensei-cli analyze lecture.mp4 -o lecture.cutsensei --board 0.05,0.1,0.9,0.6
+    cutsensei-cli auto goodnotes_recording.mp4 --source screen
     cutsensei-cli export lecture.cutsensei -o lecture_edited.mp4 --encoder h264_nvenc
     cutsensei-cli demo demo_lecture.mp4
 """
@@ -79,6 +80,9 @@ def _add_auto_args(p: argparse.ArgumentParser) -> None:
                    help="speech detector")
     g.add_argument("--board", action="append", metavar="X,Y,W,H",
                    help="board region as fractions of the frame (repeatable)")
+    g.add_argument("--source", choices=["auto", "camera", "screen"], default=None,
+                   help="camera recording (blackboard/whiteboard) or screen recording of "
+                        "digital notes (GoodNotes, OneNote, ...); default: detect")
     g.add_argument("--hw-decode", action="store_true", help="use GPU video decoding")
 
 
@@ -109,10 +113,17 @@ def _apply_auto_args(settings, args) -> None:
         settings.min_cut = max(0.1, args.min_cut)
     if args.vad is not None:
         settings.vad_engine = args.vad
+    if getattr(args, "source", None) is not None:
+        settings.source_type = args.source
 
 
 def _print_summary(project) -> None:
     st = project.timeline.stats(project.settings)
+    if project.analysis is not None:
+        a = project.analysis
+        how = "detected" if project.settings.source_type == "auto" else "chosen"
+        extra = ", camera picture ignored" if a.source == "screen" and a.live_rects else ""
+        print(f"recording   : {a.source} ({how}{extra})")
     print(f"source      : {_fmt_time(st['source'])}")
     print(f"edited      : {_fmt_time(st['output'])}  (-{st['reduction'] * 100:.1f}%)")
     print(f"sped up     : {_fmt_time(st['sped_source'])} -> {_fmt_time(st['sped_output'])}")
@@ -132,7 +143,8 @@ def _analyze(input_path: str, args, quiet: bool):
     project.board_regions = _parse_board(args.board)
     project.export.hw_decode = bool(args.hw_decode)
     project.analysis = analyze(media, project.board_regions, project.settings.vad_engine,
-                               progress=_Bar("analyze", quiet), hw_decode=args.hw_decode)
+                               progress=_Bar("analyze", quiet), hw_decode=args.hw_decode,
+                               source_type=project.settings.source_type)
     project.timeline = regenerate(project.timeline, project.analysis, project.settings)
     project.auto_applied = True
     return project
@@ -226,10 +238,18 @@ def cmd_segments(args) -> int:
 
 
 def cmd_demo(args) -> int:
-    from .demo import DemoSpec, Scene, generate_demo
+    from .demo import DemoSpec, Scene, generate_demo, screen_spec
 
     spec = DemoSpec()
-    if args.scenario == "mixed":
+    if args.scenario == "screen":
+        spec = screen_spec()
+    elif args.scenario == "screen-mixed":
+        spec = screen_spec([Scene("speech", 12), Scene("speech_laser", 8), Scene("writing", 15),
+                            Scene("idle", 10), Scene("speech_writing", 10), Scene("scroll", 3),
+                            Scene("writing", 12), Scene("page", 2), Scene("idle", 12),
+                            Scene("laser", 6), Scene("speech", 10), Scene("writing", 10),
+                            Scene("idle", 8)], webcam=True)
+    elif args.scenario == "mixed":
         spec = DemoSpec(scenes=[Scene("speech", 15), Scene("speech_writing", 15),
                                 Scene("writing", 20), Scene("walk", 8), Scene("idle", 12),
                                 Scene("speech", 10), Scene("writing", 10), Scene("idle", 6),
@@ -281,7 +301,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("demo", help="generate a synthetic lecture video for testing")
     s.add_argument("output")
-    s.add_argument("--scenario", choices=["standard", "mixed"], default="standard")
+    s.add_argument("--scenario", choices=["standard", "mixed", "screen", "screen-mixed"],
+                   default="standard",
+                   help="camera recording of a blackboard (standard, mixed) or a tablet "
+                        "screen recording of digital notes (screen, screen-mixed)")
     s.set_defaults(func=cmd_demo)
     return p
 

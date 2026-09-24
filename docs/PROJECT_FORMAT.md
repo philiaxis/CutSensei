@@ -17,7 +17,8 @@ so newer versions can add fields without breaking older files.
     "audio_rate": 48000, "audio_channels": 2, "size": 123456789, "mtime": 1790000000.0
   },
   "board_regions": [[0.05, 0.08, 0.90, 0.62]],   // x, y, w, h as fractions of the frame
-  "settings": { "writing_speed": 4.0, "aggressiveness": 50, "pad_before": 0.25, ... },
+  "settings": { "writing_speed": 4.0, "aggressiveness": 50, "pad_before": 0.25,
+                "source_type": "auto", ... },   // auto | camera | screen
   "export":   { "height": 0, "fps": 0.0, "quality": 2, "encoder": "auto", ... },
   "auto_applied": true,
   "segments": [
@@ -40,9 +41,12 @@ so newer versions can add fields without breaking older files.
 ```
 
 The `analysis` blob contains the arrays `speech`, `voicing`, `loudness`, `clicks`, `ink`,
-`motion`, `hand`, `global_change` (float16, one value per 0.1 s) and `wave_peaks` (uint8,
-100 values per second) plus a JSON `__meta__` entry (duration, board regions used, speech
-detector, version). With it, a project can be re-edited with different settings without
+`motion`, `hand`, `global_change`, `nav` (float16, one value per 0.1 s; `nav` is the scrolling /
+page turn activity of screen recordings and may be missing in older files) and `wave_peaks`
+(uint8, 100 values per second) plus a JSON `__meta__` entry (duration, board regions used, speech
+detector, version and in `meta`: `source` = how the video was analysed (`camera` / `screen`,
+missing = camera), `source_detected`, `source_confidence` and `live_rects`, the normalized
+rectangles of a webcam picture that were ignored). With it, a project can be re-edited with different settings without
 analysing the video again. Thumbnails are not stored in the project; they are regenerated
 into the user cache directory when needed.
 

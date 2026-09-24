@@ -9,10 +9,12 @@ STRINGS = {
     "&Playback": "再生(&P)",
     "&View": "表示(&V)",
     "(checking GPU encoders...)": "（GPUエンコーダーを確認中…）",
-    "1. Import a lecture video (Ctrl+I) or drop it here\n2. Optionally mark the board region\n"
+    "1. Import a lecture video or screen recording (Ctrl+I), or drop it here\n"
+    "2. Optionally mark the board region\n"
     "3. Press \"Auto edit\"\n4. Check and correct on the timeline\n5. Export":
-        "1. 講義動画を読み込む（Ctrl+I またはここへドロップ）\n2. 必要に応じて黒板範囲を指定\n"
+        "1. 講義動画や画面録画を読み込む（Ctrl+I またはここへドロップ）\n2. 必要に応じて板書範囲を指定\n"
         "3. 「自動編集」を押す\n4. タイムラインで確認・修正\n5. 書き出し",
+    "A camera picture in the recording is ignored.": "録画内のカメラ映像（ワイプ）は無視します。",
     "A language change takes effect after restarting CutSensei.":
         "言語の変更は CutSensei の再起動後に反映されます。",
     "About CutSensei": "CutSensei について",
@@ -28,6 +30,7 @@ STRINGS = {
     "Always keep this segment (P)": "この区間を必ず残す (P)",
     "Always keep this segment (protect)": "この区間は必ず残す（保護）",
     "Analyse the video and create the edit (Ctrl+R)": "動画を解析して編集案を作成 (Ctrl+R)",
+    "Analysed as: {kind}.": "{kind}として解析しました。",
     "Analysing speech and board writing...": "発話と板書を解析しています…",
     "Analysis cancelled.": "解析をキャンセルしました。",
     "Audio": "音声",
@@ -49,14 +52,23 @@ STRINGS = {
     "Back 1 second": "1秒戻る",
     "Before speech": "発話前の余白",
     "Best": "最高画質",
-    "Board region": "黒板範囲",
+    "Board region": "板書範囲",
     "Board region changed. Press \"Auto edit\" to analyse again.":
-        "黒板範囲を変更しました。「自動編集」を押すと再解析します。",
+        "板書範囲を変更しました。「自動編集」を押すと再解析します。",
     "Board writing": "板書",
     "Board writing speed": "板書の倍率",
-    "Board {n}": "黒板 {n}",
+    "Board {n}": "範囲 {n}",
     "Browse...": "参照…",
     "CPU encoding": "CPUでエンコード",
+    "Camera (blackboard, whiteboard)": "カメラ撮影（黒板・ホワイトボード）",
+    "Camera picture (ignored)": "カメラ映像（無視）",
+    "Camera recording (blackboard / whiteboard)": "カメラ撮影（黒板・ホワイトボード）",
+    "Camera: a classroom recording of a blackboard, whiteboard or electronic board.\n"
+    "Screen recording: GoodNotes, Notability, OneNote, a whiteboard app or slides written on "
+    "with a pen, recorded on a tablet or PC.":
+        "カメラ撮影：教室で黒板・ホワイトボード・電子黒板を撮影した動画\n"
+        "画面録画：GoodNotes・Notability・OneNote・ホワイトボードアプリ・ペンで書き込むスライド"
+        "などを、タブレットや PC で録画した動画",
     "Cancel": "キャンセル",
     "Cancelling...": "キャンセルしています…",
     "Cannot split here (too close to a boundary).": "ここでは分割できません（境界に近すぎます）。",
@@ -77,6 +89,8 @@ STRINGS = {
     "Delete selected": "選択を削除",
     "Deleted": "削除区間",
     "Deleted manually": "手動で削除",
+    "Detected when the video is analysed.": "動画の解析時に自動で判定します。",
+    "Detected: {kind}": "判定結果：{kind}",
     "Edited": "編集後",
     "Edited length": "編集後の長さ",
     "Edited manually - the automatic edit will not change this segment.":
@@ -130,7 +144,7 @@ STRINGS = {
     "Length": "長さ",
     "License": "ライセンス",
     "Loaded {f}. Mark the board region if needed, then press \"Auto edit\".":
-        "{f} を読み込みました。必要に応じて黒板範囲を指定し、「自動編集」を押してください。",
+        "{f} を読み込みました。必要に応じて板書範囲を指定し、「自動編集」を押してください。",
     "Loading frame...": "フレームを読み込んでいます…",
     "Locate source video": "元動画の場所を指定",
     "Lower volume": "音量を下げる",
@@ -140,7 +154,8 @@ STRINGS = {
     "Margin next to a cut": "カット前後の余白",
     "Margin next to cuts": "カット前後の余白",
     "Mark as checked": "確認済みにする",
-    "Mark the blackboard / whiteboard area (optional)": "黒板・ホワイトボードの範囲を指定（任意）",
+    "Mark the blackboard, whiteboard or note area (optional)":
+        "黒板・ホワイトボード・ノートの範囲を指定（任意）",
     "Mark the blackboard / whiteboard with one or more rectangles. Only these areas are used "
     "to detect writing, so movement elsewhere (the audience, a door, a screen) is ignored. "
     "Without a region the whole frame is used.":
@@ -150,7 +165,7 @@ STRINGS = {
     "Media": "素材",
     "Media panel": "素材パネル",
     "Mixed": "複数",
-    "Movement without speech": "無言での移動",
+    "Movement without speech": "無言の動き（移動・ポインター）",
     "Mute": "ミュート",
     "Neural (Silero VAD)": "ニューラル（Silero VAD）",
     "Next / previous item to check": "次 / 前の確認対象",
@@ -188,6 +203,8 @@ STRINGS = {
     "Preferences": "環境設定",
     "Preferences...": "環境設定…",
     "Press \"Auto edit\" to analyse the video.": "「自動編集」を押すと動画を解析します。",
+    "Press \"Re-apply auto edit\" to analyse the video again.":
+        "「自動編集を再適用」を押すと動画を解析し直します。",
     "Preview the unedited source video (V)": "編集前の元動画をプレビュー (V)",
     "Preview volume": "プレビュー音量",
     "Preview with cuts and speed changes (V)": "カットと速度変更を反映してプレビュー (V)",
@@ -210,6 +227,7 @@ STRINGS = {
     "Re-apply auto edit": "自動編集を再適用",
     "Reason": "理由",
     "Recent": "最近使ったプロジェクト",
+    "Recording type": "素材の種類",
     "Redo": "やり直す",
     "Reduction": "短縮率",
     "Release all manual edits": "すべての手動修正を解除",
@@ -234,6 +252,11 @@ STRINGS = {
     "Save as...": "名前を付けて保存…",
     "Save changes to \"{n}\"?": "「{n}」への変更を保存しますか？",
     "Saved {p}": "保存しました：{p}",
+    "Screen recording (digital notes)": "画面録画（電子黒板・電子ノート）",
+    "Screen recordings of digital notes: mark the page area without the app's toolbars and "
+    "status bar. A camera picture of the lecturer is found and ignored automatically.":
+        "電子ノートの画面録画では、アプリのツールバーやステータスバーを除いたページ部分を指定します。"
+        "講師のカメラ映像（ワイプ）は自動で見つけて無視します。",
     "Segment": "区間",
     "Segment {i} of {n}": "区間 {i} / {n}",
     "Segments you edited or protected are not overwritten when the edit is regenerated.":
@@ -256,7 +279,7 @@ STRINGS = {
     "Showing the finished board": "完成した板書を見せる時間",
     "Signal processing": "信号処理",
     "Silent board writing": "無言の板書",
-    "Silent movement is marked for checking": "無言の移動を確認対象にする",
+    "Silent movement is marked for checking": "無言の動き（移動・ポインター）を確認対象にする",
     "Small file": "小さいファイル",
     "Sped up": "倍速",
     "Speech detected": "発話を検出",
@@ -305,7 +328,7 @@ STRINGS = {
         "{c:.1f} 秒より長い待機を削除し、{w:.1f} 秒より長い板書を倍速にします。",
     "Waiting without speech or writing": "発話も板書もない待機",
     "Whole frame is analysed. Drag to mark the board area.":
-        "画面全体を解析します。ドラッグして黒板の範囲を指定できます。",
+        "画面全体を解析します。ドラッグして板書の範囲を指定できます。",
     "Writing threshold": "板書判定のしきい値",
     "Zoom in": "拡大",
     "Zoom in (+ / Ctrl+wheel)": "拡大（+ / Ctrl+ホイール）",

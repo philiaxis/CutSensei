@@ -12,10 +12,11 @@ import numpy as np
 from ..core.jobs import CancelToken, Progress, ProgressCallback
 from ..core.media import MediaInfo
 from ..core.paths import thumbnails_dir
-from ..core.settings import VadEngine
+from ..core.settings import SourceType, VadEngine
 from . import audio as audio_mod
 from . import video as video_mod
 from .result import HOP, AnalysisResult
+from .source import SourceDetection, detect_source
 
 
 def analyze(media: MediaInfo, regions: Sequence[Sequence[float]] = (),
@@ -25,9 +26,13 @@ def analyze(media: MediaInfo, regions: Sequence[Sequence[float]] = (),
             hw_decode: bool = False,
             make_thumbnails: bool = False,
             previous: Optional[AnalysisResult] = None,
-            reuse_audio: bool = False) -> AnalysisResult:
+            reuse_audio: bool = False,
+            source_type: str = SourceType.AUTO) -> AnalysisResult:
     """Analyse ``media``.  With ``reuse_audio`` the audio features of
-    ``previous`` are kept (e.g. when only the board region changed)."""
+    ``previous`` are kept (e.g. when only the board region changed).
+
+    ``source_type`` selects camera recordings (blackboard, whiteboard) or
+    screen recordings (digital notes); ``auto`` detects it."""
     cancel = cancel or CancelToken()
     prog = Progress(progress)
     n = AnalysisResult.frames_for(media.duration, HOP)
@@ -78,11 +83,27 @@ def analyze(media: MediaInfo, regions: Sequence[Sequence[float]] = (),
         shutil.rmtree(thumbs, ignore_errors=True)
         os.makedirs(thumbs, exist_ok=True)
 
+    detection: List[SourceDetection] = []
+
     def run_video() -> None:
         try:
+            det = None
+            if previous is not None and "source_detected" in previous.meta:
+                det = SourceDetection(previous.meta["source_detected"],
+                                      float(previous.meta.get("source_confidence", 0.0)),
+                                      previous.live_rects)
+            if det is None:
+                det = detect_source(media, cancel=cancel)
+            detection.append(det)
+            report("video", 0.03)
+            source = det.kind if source_type not in (SourceType.CAMERA, SourceType.SCREEN) \
+                else source_type
+            exclude = det.live_rects if source == SourceType.SCREEN else []
             video_out.append(video_mod.extract_video_features(
-                media, regions, thumbs_dir=thumbs, progress=lambda f: report("video", f),
-                cancel=cancel, hw_decode=hw_decode))
+                media, regions, thumbs_dir=thumbs,
+                progress=lambda f: report("video", 0.03 + 0.97 * f),
+                cancel=cancel, hw_decode=hw_decode, source=source, exclude=exclude))
+            video_out.append(source)
             report("video", 1.0)
         except BaseException as exc:
             errors.append(exc)
@@ -108,16 +129,20 @@ def analyze(media: MediaInfo, regions: Sequence[Sequence[float]] = (),
     res.wave_peaks = au.wave_peaks
     res.has_audio = media.has_audio
 
-    vf, thumb_int, n_thumbs = video_out[0]
+    (vf, thumb_int, n_thumbs), source = video_out
     res.ink = video_mod.resample_to_hop(np.maximum(vf.ink, 0), vf.fps, n, HOP)
     res.motion = video_mod.resample_to_hop(vf.motion, vf.fps, n, HOP)
     res.hand = video_mod.resample_to_hop(vf.hand, vf.fps, n, HOP)
     res.global_change = video_mod.resample_to_hop(vf.global_change, vf.fps, n, HOP)
+    if vf.nav is not None:
+        res.nav = video_mod.resample_to_hop(vf.nav, vf.fps, n, HOP)
     res.has_video_features = len(vf.ink) > 0
     res.thumb_interval = thumb_int
     res.thumb_count = n_thumbs
     res.thumb_fingerprint = media.fingerprint()
-    res.meta = {"polarity": vf.polarity, "analysis_size": [vf.width, vf.height]}
+    res.meta = {"polarity": vf.polarity, "analysis_size": [vf.width, vf.height],
+                "source": source, "source_requested": source_type}
+    res.meta.update(detection[0].to_meta())
     res.ensure_lengths()
     prog(1.0, "done")
     return res

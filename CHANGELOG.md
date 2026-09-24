@@ -8,6 +8,11 @@
   taps are counted separately and never mistaken for speech.
 - Board writing detection that tracks strokes staying on the board, ignores a lecturer who
   only walks past and credits writing hidden behind the body; optional board regions.
+- Screen recordings of digital notes (GoodNotes, Notability, OneNote, whiteboard apps,
+  annotated slides): camera / screen recordings are told apart automatically (or chosen by
+  hand); writing and erasing are measured pixel-exactly while scrolling, zooming, page turns,
+  a laser pointer, the cursor, status bar indicators and a webcam picture-in-picture are not
+  counted as writing.
 - Protective rules: speech margins, kept pauses, finished-board hold, merged short parts,
   review items instead of deletions when unsure.
 - Desktop editor (PySide6): preview that plays the edited result in real time, timeline
@@ -20,5 +25,6 @@
 - MP4 export (H.264/H.265) with resolution, frame rate and quality options, pitch
   preserving audio time-stretch, sample accurate A/V sync, hardware encoders
   (NVENC, Quick Sync, AMF, VideoToolbox) and optional hardware decoding.
-- Command line interface (`cutsensei-cli`) and synthetic demo generator.
+- Command line interface (`cutsensei-cli`, `--source auto|camera|screen`) and synthetic demo
+  generator (camera lecture and tablet screen recording).
 - Windows, macOS (arm64/x64) and Linux builds.
