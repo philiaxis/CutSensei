@@ -48,6 +48,7 @@ GPU エンコードにも対応しています。
 
 [Releases](https://github.com/philiaxis/CutSensei/releases) から OS に合ったファイルをダウンロードして展開し、
 `CutSensei`（Windows は `CutSensei.exe`、macOS は `CutSensei.app`）を起動します。FFmpeg も同梱されています。
+同じフォルダーにコマンドライン版の `cutsensei-cli` も入っています（macOS は `CutSensei.app/Contents/MacOS/cutsensei-cli`）。
 
 - **macOS**：署名されていないため、初回は Finder で右クリック →「開く」を選んでください。
 - **Linux**：Qt の動作に `libxcb-cursor0` などが必要な場合があります（下記「トラブルシューティング」参照）。

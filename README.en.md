@@ -54,7 +54,8 @@ a synthetic lecture. With the default margins the result is about 72 s.
 
 Download the archive for your OS from [Releases](https://github.com/philiaxis/CutSensei/releases),
 extract it and start `CutSensei` (`CutSensei.exe` on Windows, `CutSensei.app` on macOS). FFmpeg is
-included. On macOS the app is not signed: right-click → *Open* the first time.
+included, and so is the command line tool `cutsensei-cli` (on macOS inside
+`CutSensei.app/Contents/MacOS/`). On macOS the app is not signed: right-click → *Open* the first time.
 
 ### With pip (Python 3.10+)
 
