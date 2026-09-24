@@ -130,3 +130,16 @@ def test_regenerate_preserves_manual_and_protected():
     assert new.segment_at(30).speed == 2.0
     unlocked = regenerate(tl, res, st, keep_locked=False)
     assert unlocked.segment_at(50).action == Action.CUT
+
+
+def test_review_fragments_are_merged():
+    # chalk sounds without visible ink: many "possibly writing" bits with short gaps
+    spec = [(10, 0.9, 0, 0, 0)]
+    for _ in range(5):
+        spec += [(1.5, 0, 0, 6.0, 0), (0.8, 0, 0, 0, 0)]
+    spec += [(10, 0.9, 0, 0, 0)]
+    res = make_result(spec)
+    segs = auto_segments(res, AutoEditSettings())
+    reviews = [s for s in segs if s.review]
+    assert len(reviews) == 1
+    assert reviews[0].duration > 9.0

@@ -254,9 +254,48 @@ def labels_to_segments(labels: np.ndarray, hop: float, duration: float,
             cur.action = cur.auto_action = Action.SPEED
             cur.kind = Kind.WRITING
             cur.reason = Reason.WRITING
+    segs = _merge_review_clusters(segs, st)
     tl = Timeline(duration, segs)
     tl.merge_equal_neighbors()
     return tl.segments
+
+
+def _merge_review_clusters(segs: List[Segment], st: AutoEditSettings) -> List[Segment]:
+    """Uncertain parts separated only by short kept pauses (or a very short
+    speech blip) become one item to check instead of many small ones."""
+    def joinable(seg: Segment) -> bool:
+        if seg.action != Action.KEEP:
+            return False
+        if seg.review:
+            return True
+        if seg.kind == Kind.IDLE and seg.reason in (Reason.SHORT_PAUSE,):
+            return True
+        return seg.kind == Kind.SPEECH and seg.duration < 1.0
+
+    out: List[Segment] = []
+    i = 0
+    n = len(segs)
+    while i < n:
+        if not segs[i].review:
+            out.append(segs[i])
+            i += 1
+            continue
+        j = i + 1
+        last_review = i
+        while j < n and joinable(segs[j]):
+            if segs[j].review:
+                last_review = j
+            j += 1
+        group = segs[i:last_review + 1]
+        if len(group) > 1:
+            reasons = [g.reason for g in group if g.review]
+            reason = max(set(reasons), key=reasons.count)
+            out.append(Segment(group[0].start, group[-1].end, Kind.UNCERTAIN, Action.KEEP,
+                               auto_action=Action.KEEP, reason=reason, review=True))
+        else:
+            out.append(group[0])
+        i = last_review + 1
+    return out
 
 
 def auto_segments(res: AnalysisResult, st: AutoEditSettings) -> List[Segment]:
