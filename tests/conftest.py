@@ -19,6 +19,8 @@ os.environ.setdefault("QT_LOGGING_RULES", "qt.multimedia.*=false")
 def _isolated_cache(tmp_path_factory):
     cache = tmp_path_factory.mktemp("cache")
     os.environ["CUTSENSEI_CACHE_DIR"] = str(cache)
+    # never touch the real user settings (recent files, defaults) from tests
+    os.environ["CUTSENSEI_SETTINGS"] = str(cache / "settings.ini")
     yield
 
 

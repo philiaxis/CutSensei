@@ -6,7 +6,7 @@ import json
 import os
 from typing import List, Optional
 
-from PySide6.QtCore import QByteArray, QSettings, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QByteArray, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (QApplication, QFileDialog, QLabel, QMainWindow, QMenu,
                                QMessageBox, QSizePolicy, QSplitter, QToolBar, QToolButton,
@@ -29,6 +29,7 @@ from .dialogs import (BoardRegionDialog, ExportDialog, PreferencesDialog, show_a
 from .fmt import fmt_duration, fmt_time
 from .i18n import tr
 from .panels import MediaPanel, PropertiesPanel
+from .settings_store import app_settings
 from .preview import EDITED, SOURCE, PreviewEngine, TransportBar, VideoView, badge_for
 from .timeline_view import TimelinePanel
 from .workers import JobThread, ProgressRunner
@@ -39,7 +40,7 @@ VIDEO_FILTER = "*" + " *".join(VIDEO_EXTENSIONS)
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.qs = QSettings(APP_NAME, APP_NAME)
+        self.qs = app_settings()
         self.ctrl = ProjectController(self)
         self.engine = PreviewEngine(self)
         self._thumb_job: Optional[JobThread] = None
@@ -188,6 +189,9 @@ class MainWindow(QMainWindow):
         cl.addWidget(self.transport)
         self.timeline = TimelinePanel(self.ctrl)
 
+        self.media_panel.setMinimumWidth(230)
+        self.props.setMinimumWidth(300)
+        center.setMinimumWidth(520)
         self.hsplit = QSplitter(Qt.Horizontal)
         self.hsplit.addWidget(self.media_panel)
         self.hsplit.addWidget(center)
@@ -317,6 +321,15 @@ class MainWindow(QMainWindow):
             st = self.qs.value(key)
             if isinstance(st, QByteArray):
                 split.restoreState(st)
+        if not isinstance(self.qs.value("hsplit"), QByteArray):
+            # first start on a small screen: give the preview the room
+            w = self.width()
+            if w < 1180:
+                self.hsplit.setSizes([0, max(520, w - 300), 300])
+            else:
+                side = 250 if w < 1500 else 270
+                right = 310 if w < 1500 else 340
+                self.hsplit.setSizes([side, w - side - right, right])
         self._sync_panel_actions()
         QTimer.singleShot(0, self._detect_gpu)
 

@@ -14,7 +14,7 @@ from PySide6.QtCore import QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl, Si
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame, QVideoSink
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QSizePolicy, QSlider, QToolButton,
-                               QWidget)
+                               QVBoxLayout, QWidget)
 
 from ..core.timeline import Action, EditMap, Kind, Timeline
 from . import icons, theme
@@ -539,8 +539,8 @@ class TransportBar(QWidget):
         self.setObjectName("transport")
         self.setAttribute(Qt.WA_StyledBackground)
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(8, 4, 8, 4)
-        lay.setSpacing(2)
+        lay.setContentsMargins(6, 3, 6, 3)
+        lay.setSpacing(1)
         self.prev_mark = tool_button("prev_mark", "")
         self.frame_back = tool_button("frame_back", "")
         self.play = tool_button("play", "")
@@ -549,15 +549,20 @@ class TransportBar(QWidget):
         self.next_mark = tool_button("next_mark", "")
         for b in (self.prev_mark, self.frame_back, self.play, self.frame_fwd, self.next_mark):
             lay.addWidget(b)
-        lay.addSpacing(10)
-        self.time_label = QLabel("00:00.0 / 00:00.0")
+        lay.addSpacing(8)
+        times = QVBoxLayout()
+        times.setSpacing(0)
+        times.setContentsMargins(0, 0, 0, 0)
+        self.time_label = QLabel("00:00.00 / 00:00.0")
         self.time_label.setFont(theme.mono_font(10.5))
-        self.time_label.setMinimumWidth(170)
-        lay.addWidget(self.time_label)
+        self.time_label.setMinimumWidth(
+            self.time_label.fontMetrics().horizontalAdvance("0:00:00.00 / 0:00:00.0") + 6)
+        times.addWidget(self.time_label)
         self.src_label = QLabel("")
         self.src_label.setObjectName("dim")
-        self.src_label.setFont(theme.mono_font(9))
-        lay.addWidget(self.src_label)
+        self.src_label.setFont(theme.mono_font(8.5))
+        times.addWidget(self.src_label)
+        lay.addLayout(times)
         lay.addStretch(1)
         self.prev_review = tool_button("prev_review", "")
         self.next_review = tool_button("next_review", "")
@@ -586,6 +591,14 @@ class TransportBar(QWidget):
         self.mute.toggled.connect(
             lambda on: self.mute.setIcon(icons.icon("mute" if on else "volume")))
         self.retranslate()
+
+    def resizeEvent(self, e) -> None:
+        super().resizeEvent(e)
+        # drop secondary controls when space is short
+        w = self.width()
+        self.volume.setVisible(w >= 700)
+        for b in (self.prev_review, self.next_review, self.around):
+            b.setVisible(w >= 600)
 
     def retranslate(self) -> None:
         self.prev_mark.setToolTip(tr("Previous boundary (Up)"))
@@ -616,6 +629,8 @@ def badge_for(timeline: Optional[Timeline], edit_map: Optional[EditMap], src_t: 
     if timeline is None or len(timeline) == 0:
         return []
     seg = timeline.segment_at(src_t)
+    if seg.reason == "unanalyzed":
+        return [(tr("Not analysed yet"), theme.TEXT_DIM)]
     parts = [(kind_label(seg.kind), theme.KIND_COLORS.get(seg.kind, theme.TEXT_DIM))]
     if seg.action == Action.CUT:
         parts.append((tr("Deleted"), theme.CUT))

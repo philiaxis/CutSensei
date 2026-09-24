@@ -2,11 +2,12 @@
 
 Lookup order for the ``ffmpeg`` executable:
 
-1. a path configured at runtime with :func:`set_ffmpeg_path`
+1. a path configured at runtime with :func:`set_ffmpeg_path` (preferences)
 2. the ``CUTSENSEI_FFMPEG`` environment variable
-3. a binary shipped next to a frozen (PyInstaller) build
-4. ``ffmpeg`` on ``PATH``
+3. ``ffmpeg`` on ``PATH`` (system builds integrate best with GPU drivers)
+4. a binary shipped next to a frozen (PyInstaller) build
 5. the static binary bundled with the ``imageio-ffmpeg`` package
+   (its Windows build includes NVENC, Quick Sync and AMF)
 
 ``ffprobe`` is optional; when it is missing, media information is parsed
 from ``ffmpeg -i`` output instead (see :mod:`cutsensei.core.media`).
@@ -49,7 +50,7 @@ def _frozen_dirs() -> List[Path]:
     dirs: List[Path] = []
     if getattr(sys, "frozen", False):
         base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
-        dirs += [base / "ffmpeg", base, Path(sys.executable).parent]
+        dirs += [base / "ffmpeg" / "bin", base / "ffmpeg", base, Path(sys.executable).parent]
     return dirs
 
 
@@ -57,22 +58,30 @@ def _is_executable(path: Optional[str]) -> bool:
     return bool(path) and os.path.isfile(path) and os.access(path, os.X_OK)
 
 
-@lru_cache(maxsize=1)
-def find_ffmpeg() -> str:
-    candidates: List[Optional[str]] = [_configured_ffmpeg, os.environ.get("CUTSENSEI_FFMPEG")]
-    candidates += [str(d / f"ffmpeg{EXE_SUFFIX}") for d in _frozen_dirs()]
-    candidates.append(shutil.which("ffmpeg"))
-    for cand in candidates:
-        if _is_executable(cand):
-            return str(cand)
+def _imageio_ffmpeg() -> Optional[str]:
     try:
         import imageio_ffmpeg  # type: ignore
 
-        exe = imageio_ffmpeg.get_ffmpeg_exe()
-        if _is_executable(exe):
-            return exe
+        return imageio_ffmpeg.get_ffmpeg_exe()
     except Exception:  # pragma: no cover - depends on the environment
-        pass
+        return None
+
+
+@lru_cache(maxsize=1)
+def find_ffmpeg() -> str:
+    explicit = [_configured_ffmpeg, os.environ.get("CUTSENSEI_FFMPEG")]
+    for cand in explicit:
+        if _is_executable(cand):
+            return str(cand)
+    system = [lambda: shutil.which("ffmpeg")]
+    bundled = [lambda d=d: str(d / f"ffmpeg{EXE_SUFFIX}") for d in _frozen_dirs()]
+    bundled.append(_imageio_ffmpeg)
+    order = bundled + system if os.environ.get("CUTSENSEI_PREFER_BUNDLED_FFMPEG") == "1" \
+        else system + bundled
+    for get in order:
+        cand = get()
+        if _is_executable(cand):
+            return str(cand)
     raise FFmpegNotFoundError(
         "FFmpeg was not found. Install FFmpeg and add it to PATH, set the "
         "CUTSENSEI_FFMPEG environment variable, or `pip install imageio-ffmpeg`."

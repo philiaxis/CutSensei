@@ -14,22 +14,18 @@ from cutsensei import __version__  # noqa: E402
 
 ffmpeg_dir = os.path.join(HERE, "ffmpeg")
 binaries = []
-if os.path.isdir(ffmpeg_dir):
-    for name in os.listdir(ffmpeg_dir):
-        path = os.path.join(ffmpeg_dir, name)
-        if os.path.isfile(path) and not name.endswith((".txt", ".md")):
-            binaries.append((path, "ffmpeg"))
 datas = [
     (os.path.join(SRC, "cutsensei", "models"), os.path.join("cutsensei", "models")),
     (os.path.join(SRC, "cutsensei", "resources"), os.path.join("cutsensei", "resources")),
     (os.path.join(ROOT, "LICENSE"), "."),
     (os.path.join(ROOT, "THIRD_PARTY_NOTICES.md"), "."),
 ]
+# FFmpeg is copied verbatim (bin/ + lib/ layout, executable bits preserved)
 if os.path.isdir(ffmpeg_dir):
-    for name in os.listdir(ffmpeg_dir):
-        if name.endswith((".txt", ".md")):
-            datas.append((os.path.join(ffmpeg_dir, name), "ffmpeg"))
+    datas.append((ffmpeg_dir, "ffmpeg"))
 datas += collect_data_files("onnxruntime")
+if not os.path.isdir(ffmpeg_dir):
+    datas += collect_data_files("imageio_ffmpeg", subdir="binaries")
 
 hiddenimports = collect_submodules("cutsensei") + ["PySide6.QtMultimedia", "PySide6.QtSvg"]
 excludes = [
@@ -61,6 +57,16 @@ a = Analysis(
     excludes=excludes,
     noarchive=False,
 )
+# Qt parts CutSensei does not use (PDF, virtual keyboard, EGLFS).  Note: the
+# FFmpeg multimedia plugin links against Qt Quick/QML, so those must stay.
+_DROP = ("Qt6Pdf", "Qt6VirtualKeyboard", "Qt6EglFs", "Qt6EglFSDeviceIntegration",
+         "platforminputcontexts", "egldeviceintegrations", "imageformats/libqpdf",
+         "imageformats\\qpdf", "Qt6ShaderTools", "Qt6LabsFolderListModel")
+a.binaries = [b for b in a.binaries if not any(d in b[0].replace("\\", "/") or d in b[1]
+                                               for d in _DROP)]
+a.datas = [d for d in a.datas if not any(x in d[0] for x in ("Qt6Pdf", "qtwebengine",
+                                                              "translations/qtwebengine"))]
+
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [],

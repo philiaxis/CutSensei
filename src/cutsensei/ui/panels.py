@@ -216,7 +216,7 @@ class MediaPanel(QTabWidget):
             self._stat_labels["reduction"].setText(f"{st['reduction'] * 100:.1f} %")
             self._stat_labels["kept"].setText(fmt_time(st["kept"], 1))
             self._stat_labels["sped"].setText(
-                f"{fmt_time(st['sped_source'], 1)} → {fmt_time(st['sped_output'], 1)}")
+                f"{fmt_time(st['sped_source'], 0)} → {fmt_time(st['sped_output'], 0)}")
             self._stat_labels["cut"].setText(fmt_time(st["cut"], 1))
             open_n = int(st["review_open"])
             self._stat_labels["review"].setText(

@@ -15,3 +15,5 @@ Thumbs.db
 # user data
 *.cutsensei
 *_edited.mp4
+packaging/build/
+packaging/ffmpeg/

@@ -2,12 +2,11 @@
 """Build a self-contained CutSensei application with PyInstaller.
 
     pip install -e .[dev] pillow
-    python packaging/build.py            # downloads a GPU capable FFmpeg build
-    python packaging/build.py --no-ffmpeg   # use FFmpeg from PATH at runtime
+    python packaging/build.py
+    python packaging/build.py --ffmpeg-dir /path/to/ffmpeg-build   # custom FFmpeg
 
 The result is written to ``dist/`` as a zip (Windows, macOS) or tar.gz (Linux).
-FFmpeg builds: BtbN/FFmpeg-Builds (Windows, Linux; include NVENC/QSV/AMF) and the
-imageio-ffmpeg binary on macOS (includes VideoToolbox).
+The FFmpeg binary of imageio-ffmpeg is bundled (Windows build: NVENC/QSV/AMF).
 """
 
 from __future__ import annotations
@@ -18,16 +17,11 @@ import platform
 import shutil
 import subprocess
 import sys
-import tarfile
-import tempfile
-import urllib.request
-import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 BUILD = os.path.join(HERE, "build")
 FFMPEG_DIR = os.path.join(HERE, "ffmpeg")
-BTBN = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/"
 
 sys.path.insert(0, os.path.join(ROOT, "src"))
 from cutsensei import __version__  # noqa: E402
@@ -78,51 +72,21 @@ def render_icons() -> None:
         log(f"icon conversion skipped ({exc})")
 
 
-def download(url: str, dest: str) -> None:
-    log(f"downloading {url}")
-    with urllib.request.urlopen(url) as resp, open(dest, "wb") as fh:
-        shutil.copyfileobj(resp, fh)
+def prepare_ffmpeg(custom_dir: str = "") -> None:
+    """Optionally bundle a custom FFmpeg directory (``--ffmpeg-dir``).
 
-
-def fetch_ffmpeg() -> None:
+    By default the static FFmpeg of the ``imageio-ffmpeg`` package is bundled
+    (collected by the spec file).  Its Windows build includes NVENC, Quick
+    Sync and AMF; on Linux an FFmpeg installed on the system is preferred at
+    runtime because distribution builds integrate with VAAPI/NVENC drivers.
+    """
     shutil.rmtree(FFMPEG_DIR, ignore_errors=True)
-    os.makedirs(FFMPEG_DIR)
-    tmp = tempfile.mkdtemp()
-    try:
-        if sys.platform.startswith("win"):
-            archive = os.path.join(tmp, "ffmpeg.zip")
-            download(BTBN + "ffmpeg-master-latest-win64-gpl.zip", archive)
-            with zipfile.ZipFile(archive) as zf:
-                for name in zf.namelist():
-                    base = os.path.basename(name)
-                    if base in ("ffmpeg.exe", "ffprobe.exe", "LICENSE.txt"):
-                        with zf.open(name) as src, open(os.path.join(FFMPEG_DIR, base), "wb") as d:
-                            shutil.copyfileobj(src, d)
-        elif sys.platform.startswith("linux") and platform.machine() in ("x86_64", "AMD64"):
-            archive = os.path.join(tmp, "ffmpeg.tar.xz")
-            download(BTBN + "ffmpeg-master-latest-linux64-gpl.tar.xz", archive)
-            with tarfile.open(archive) as tf:
-                for member in tf.getmembers():
-                    base = os.path.basename(member.name)
-                    if base in ("ffmpeg", "ffprobe", "LICENSE.txt") and member.isfile():
-                        src = tf.extractfile(member)
-                        assert src is not None
-                        with open(os.path.join(FFMPEG_DIR, base), "wb") as d:
-                            shutil.copyfileobj(src, d)
-                        os.chmod(os.path.join(FFMPEG_DIR, base), 0o755)
-        else:
-            import imageio_ffmpeg
-
-            exe = imageio_ffmpeg.get_ffmpeg_exe()
-            shutil.copy2(exe, os.path.join(FFMPEG_DIR, "ffmpeg"))
-            os.chmod(os.path.join(FFMPEG_DIR, "ffmpeg"), 0o755)
-            with open(os.path.join(FFMPEG_DIR, "FFMPEG_SOURCE.txt"), "w") as fh:
-                fh.write("FFmpeg binary from the imageio-ffmpeg package "
-                         "(https://github.com/imageio/imageio-ffmpeg).\n"
-                         "FFmpeg is licensed under the LGPL/GPL, see https://ffmpeg.org/legal.html\n")
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-    log(f"ffmpeg files: {os.listdir(FFMPEG_DIR)}")
+    if not custom_dir:
+        return
+    shutil.copytree(custom_dir, FFMPEG_DIR)
+    for root, _dirs, files in os.walk(FFMPEG_DIR):
+        for f in files:
+            log(f"ffmpeg: {os.path.relpath(os.path.join(root, f), FFMPEG_DIR)}")
 
 
 def run_pyinstaller() -> str:
@@ -152,14 +116,13 @@ def archive(path: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--no-ffmpeg", action="store_true", help="do not bundle FFmpeg")
+    ap.add_argument("--ffmpeg-dir", default="",
+                    help="bundle this FFmpeg directory (bin/ffmpeg[.exe], ...) instead of the "
+                         "imageio-ffmpeg binary")
     ap.add_argument("--no-archive", action="store_true")
     args = ap.parse_args()
     render_icons()
-    if args.no_ffmpeg:
-        shutil.rmtree(FFMPEG_DIR, ignore_errors=True)
-    else:
-        fetch_ffmpeg()
+    prepare_ffmpeg(args.ffmpeg_dir)
     out = run_pyinstaller()
     log(f"built {out}")
     if not args.no_archive:

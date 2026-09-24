@@ -13,7 +13,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
     os.environ.setdefault("QT_LOGGING_RULES", "qt.multimedia.symbolsresolver=false")
 
-    from PySide6.QtCore import QSettings, Qt
+    from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication, QMessageBox
 
     from . import APP_NAME, __version__
@@ -28,7 +28,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     app.setApplicationVersion(__version__)
     app.setDesktopFileName("cutsensei")
 
-    qs = QSettings(APP_NAME, APP_NAME)
+    from .ui.settings_store import app_settings
+
+    qs = app_settings()
     i18n.set_language(str(qs.value("language", "auto")))
     ff = str(qs.value("ffmpeg_path", "") or "")
     if ff and os.path.isfile(ff):
@@ -51,6 +53,15 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     win = MainWindow()
     win.show()
+    smoke = os.environ.get("CUTSENSEI_SMOKE_TEST")
+    if smoke:
+        # used by CI / packaging checks: start, render once, save a screenshot, quit
+        from PySide6.QtCore import QTimer
+
+        def finish() -> None:
+            win.grab().save(smoke)
+            app.quit()
+        QTimer.singleShot(1500, finish)
     for arg in argv[1:]:
         if arg.startswith("-"):
             continue

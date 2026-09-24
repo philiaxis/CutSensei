@@ -16,10 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 @pytest.fixture
 def window(qtbot, tmp_path, monkeypatch):
-    from PySide6.QtCore import QSettings
-
-    QSettings.setDefaultFormat(QSettings.IniFormat)
-    QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, str(tmp_path / "settings"))
+    monkeypatch.setenv("CUTSENSEI_SETTINGS", str(tmp_path / "settings.ini"))
     from cutsensei.ui import i18n, theme
     from cutsensei.ui.main_window import MainWindow
     from PySide6.QtWidgets import QApplication, QMessageBox
