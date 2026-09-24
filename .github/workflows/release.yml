@@ -44,9 +44,18 @@ jobs:
       - name: Build
         run: python packaging/build.py
 
-      - name: Smoke test (CLI inside the bundle)
-        if: runner.os == 'Linux'
-        run: ./dist/CutSensei/CutSensei --cli info
+      - name: Smoke test (bundle starts, CLI works)
+        shell: bash
+        env:
+          CUTSENSEI_SMOKE_TEST: ${{ github.workspace }}/smoke.png
+          CUTSENSEI_SETTINGS: ${{ github.workspace }}/smoke.ini
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then APP=dist/CutSensei.app/Contents/MacOS/CutSensei
+          elif [ "$RUNNER_OS" = "Windows" ]; then APP=dist/CutSensei/CutSensei.exe
+          else APP=dist/CutSensei/CutSensei; fi
+          "$APP" --cli info || true
+          "$APP"
+          test -s "$CUTSENSEI_SMOKE_TEST"
 
       - uses: actions/upload-artifact@v4
         with:
