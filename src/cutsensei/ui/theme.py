@@ -5,6 +5,8 @@ from __future__ import annotations
 from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import QApplication, QStyleFactory
 
+from ..core.paths import resource_path
+
 BG0 = "#141518"      # timeline / video background
 BG1 = "#1b1c20"      # window
 BG2 = "#222429"      # panels
@@ -68,6 +70,8 @@ def apply_theme(app: QApplication) -> None:
     app.setStyleSheet(STYLE_SHEET)
 
 
+CHECK_SVG = str(resource_path("resources", "check.svg")).replace("\\", "/")
+
 STYLE_SHEET = f"""
 QMainWindow, QDialog {{ background: {BG1}; }}
 QWidget {{ color: {TEXT}; }}
@@ -128,7 +132,13 @@ QHeaderView::section {{ background: {BG1}; color: {TEXT_DIM}; border: none;
                         border-bottom: 1px solid {BORDER}; padding: 4px 6px; }}
 QGroupBox {{ border: none; border-top: 1px solid {BORDER}; margin-top: 14px; padding-top: 8px; }}
 QGroupBox::title {{ subcontrol-origin: margin; left: 0; padding: 0 4px 0 0; color: {TEXT_DIM}; }}
-QCheckBox::indicator, QRadioButton::indicator {{ width: 14px; height: 14px; }}
+QCheckBox {{ spacing: 7px; }}
+QCheckBox::indicator {{ width: 14px; height: 14px; border: 1px solid #5c616b; border-radius: 3px;
+                       background: {BG2}; }}
+QCheckBox::indicator:hover {{ border-color: {ACCENT}; }}
+QCheckBox::indicator:checked {{ background: {ACCENT_DIM}; border-color: {ACCENT};
+                               image: url("{CHECK_SVG}"); }}
+QCheckBox::indicator:disabled {{ border-color: {BORDER}; background: {BG1}; }}
 QStatusBar {{ background: {BG1}; border-top: 1px solid {BORDER}; color: {TEXT_DIM}; }}
 QStatusBar QLabel {{ color: {TEXT_DIM}; padding: 0 6px; }}
 QMenuBar {{ background: {BG1}; border-bottom: 1px solid {BORDER}; }}

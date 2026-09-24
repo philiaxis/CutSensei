@@ -325,9 +325,12 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.engine.pause()
-        if self._thumb_job is not None:
-            self._thumb_job.cancel()
-            self._thumb_job.wait(3000)
+        for job in (self._thumb_job, getattr(self, "_gpu_job", None)):
+            if job is not None:
+                job.cancel()
+                job.wait(5000)
+        self._thumb_job = None
+        self._gpu_job = None
         self.qs.setValue("geometry", self.saveGeometry())
         self.qs.setValue("hsplit", self.hsplit.saveState())
         self.qs.setValue("vsplit", self.vsplit.saveState())
@@ -356,9 +359,13 @@ class MainWindow(QMainWindow):
                 self.gpu_label.setText(tr("CPU encoding"))
         job.succeeded.connect(done)
         job.failed.connect(lambda *_: self.gpu_label.setText(tr("FFmpeg not found")))
-        job.finished.connect(job.deleteLater)
+
+        def finished() -> None:
+            self._gpu_job = None
+            job.deleteLater()
+        job.finished.connect(finished)
+        self._gpu_job: Optional[JobThread] = job
         job.start()
-        self._gpu_job = job
 
     # ================================================================== helpers
     def _update_title(self) -> None:
@@ -634,9 +641,14 @@ class MainWindow(QMainWindow):
                 self.timeline.view.set_thumbnails(res)
                 self.media_panel.set_thumbnails(res)
         job.succeeded.connect(done)
-        job.finished.connect(job.deleteLater)
+        job.finished.connect(lambda j=job: self._job_finished(j))
         self._thumb_job = job
         job.start()
+
+    def _job_finished(self, job: JobThread) -> None:
+        if self._thumb_job is job:
+            self._thumb_job = None
+        job.deleteLater()
 
     def save_project(self) -> bool:
         p = self.ctrl.project

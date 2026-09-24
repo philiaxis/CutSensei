@@ -284,7 +284,7 @@ def detect_clicks(env_db: np.ndarray) -> np.ndarray:
     # local maximum within +-8 ms
     local = np.ones(n, bool)
     for lag in range(1, 9):
-        local[lag:] &= e[lag:] >= e[:-lag]
+        local[lag:] &= e[lag:] > e[:-lag]      # strictly above what came before
         local[:-lag] &= e[:-lag] >= e[lag:]
     return local & (e - pre > 12.0) & (e - post > 8.0) & (e - floor > 15.0)
 

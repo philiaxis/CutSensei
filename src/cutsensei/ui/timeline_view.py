@@ -396,7 +396,8 @@ class TimelineView(QWidget):
             if rect.width() > 26:
                 speed = seg.speed_value(settings)
                 sp = "✂" if seg.action == Action.CUT else fmt_speed(speed)
-                label = f"{kind_label(seg.kind)} {sp}"
+                label = f"{kind_label(seg.kind)} {sp}" if seg.reason != "unanalyzed" \
+                    else f"{tr('Not analysed yet')} {sp}"
                 if seg.review and not seg.reviewed:
                     label = "? " + label
                 if fm.horizontalAdvance(label) > rect.width() - 8:

@@ -56,8 +56,7 @@ def generate_thumbnails(media: MediaInfo, cancel: Optional[CancelToken] = None) 
         if skip:
             args += ["-skip_frame", "nokey"]
         args += ["-i", media.path, "-an", "-sn", "-dn", "-vf", vf, "-q:v", "6",
-                 "-start_number", "0", "-f", "image2", thumbnail_path(d, 0).replace(
-                     "000000", "%06d")]
+                 "-start_number", "0", "-f", "image2", os.path.join(d, "t_%06d.jpg")]
         proc = ffmpeg.popen(args, stdout=ffmpeg.subprocess.DEVNULL,
                             stderr=ffmpeg.subprocess.PIPE, stdin=ffmpeg.subprocess.DEVNULL)
         while True:

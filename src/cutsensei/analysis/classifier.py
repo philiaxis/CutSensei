@@ -157,6 +157,22 @@ def frame_labels(res: AnalysisResult, st: AutoEditSettings,
     wmask = _fill_gaps(alt == _WRITING, int(round(st.eff_writing_gap_fill * fr)))
     alt[wmask & (alt != _UNC_SPEECH)] = _WRITING
 
+    # The writing score rises and decays smoothly, so a writing run is usually
+    # framed by short "possibly writing" runs.  These edges are not worth a
+    # review: the rising edge belongs to the writing, the decaying edge is
+    # handled like the pause after writing (the finished board is shown).
+    edge = int(round(max(2.5, st.eff_hold_after_writing + 1.0) * fr))
+    runs = _runs(alt)
+    for k, (val, s, e) in enumerate(runs):
+        if val != _UNC_WRITING or (e - s) > edge:
+            continue
+        prev = runs[k - 1][0] if k > 0 else None
+        nxt = runs[k + 1][0] if k + 1 < len(runs) else None
+        if prev == _WRITING:
+            alt[s:e] = _IDLE
+        elif nxt == _WRITING:
+            alt[s:e] = _WRITING
+
     # very short uncertain islands follow their neighbours
     min_unc = int(round(1.0 * fr))
     min_unc_speech = int(round(0.5 * fr))
