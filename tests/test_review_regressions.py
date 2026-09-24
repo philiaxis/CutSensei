@@ -124,7 +124,7 @@ def test_preview_reload_same_file_and_restart_after_end(qtbot, short_video):
     qtbot.waitUntil(lambda: not eng.playing, timeout=5000)
     eng.play()                                        # starts again from the beginning
     qtbot.wait(300)
-    assert eng.playing and eng.position < 0.9
+    assert eng.playing and eng.position < 0.9, eng.trace_text()
     eng.pause()
     # play-around near the end returns to the playhead
     eng.seek(1.0)

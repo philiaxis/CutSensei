@@ -8,7 +8,9 @@ adjacent parts only change the playback rate of the active player.
 
 from __future__ import annotations
 
+import sys
 import time
+from collections import deque
 from typing import List, Optional, Tuple
 
 from PySide6.QtCore import QObject, QRectF, QSize, Qt, QTimer, QUrl, Signal
@@ -80,6 +82,10 @@ class PreviewEngine(QObject):
         self._source: Optional[str] = None
         # (target, monotonic time) of a seek the player may not have finished
         self._pending: Optional[Tuple[float, float]] = None
+        # recent playback events, for diagnosing platform specific behaviour
+        self._trace: deque = deque(maxlen=400)
+        self._trace_t0 = time.monotonic()
+        self._trace_ticks = 0
         self._timer = QTimer(self)
         self._timer.setInterval(15)
         self._timer.timeout.connect(self._tick)
@@ -113,8 +119,17 @@ class PreviewEngine(QObject):
     def edit_map(self) -> Optional[EditMap]:
         return self._map
 
+    # ------------------------------------------------------------ diagnostics
+    def _log(self, msg: str) -> None:
+        self._trace.append(f"{time.monotonic() - self._trace_t0:8.3f} {msg}")
+
+    def trace_text(self) -> str:
+        """Recent playback events (seeks, status changes, ticks) as text."""
+        return "\n".join(self._trace)
+
     # ------------------------------------------------------------ setup
     def load(self, path: Optional[str], duration: float, fps: float) -> None:
+        self._log(f"load {path!r}")
         self.pause()
         for slot in self._slots:
             slot.frame = None
@@ -175,6 +190,9 @@ class PreviewEngine(QObject):
             self.play()
 
     def play(self) -> None:
+        self._log(f"play pos={self._pos:.3f} loaded={self._loaded} mode={self._mode} "
+                  f"active={self._active} state={self.active.player.playbackState().name} "
+                  f"status={self.active.player.mediaStatus().name}")
         if not self._loaded:
             return
         if self._mode == EDITED and self._map is not None:
@@ -191,6 +209,7 @@ class PreviewEngine(QObject):
         elif self._pos >= self._duration - self._end_tolerance():
             self._seek_active(0.0)
         self._playing = True
+        self._trace_ticks = 0
         self._apply_current(force=True)
         self.active.player.play()
         self._timer.start()
@@ -199,6 +218,8 @@ class PreviewEngine(QObject):
 
     def pause(self) -> None:
         was = self._playing
+        if was:
+            self._log(f"pause from {sys._getframe(1).f_code.co_name} pos={self._pos:.3f}")
         self._playing = False
         self._timer.stop()
         for slot in self._slots:
@@ -281,6 +302,7 @@ class PreviewEngine(QObject):
 
     # ------------------------------------------------------------ internals
     def _seek_active(self, t: float) -> None:
+        self._log(f"seek {t:.3f} (player at {self.active.player.position() / 1000.0:.3f})")
         self._pos = t
         self.active.player.setPosition(int(round(t * 1000)))
         self._pending = (t, time.monotonic())
@@ -349,6 +371,7 @@ class PreviewEngine(QObject):
         sb = self.standby
         ready = (sb.preloaded is not None and abs(sb.preloaded - target) < 1e-3
                  and sb.frame_time >= 0 and abs(sb.frame_time - target) < 0.5)
+        self._log(f"jump {target:.3f} standby_ready={ready}")
         if ready:
             old = self.active
             self._active = 1 - self._active
@@ -370,6 +393,7 @@ class PreviewEngine(QObject):
 
     def _finish(self) -> None:
         """End of the edit / media reached."""
+        self._log(f"finish from {sys._getframe(1).f_code.co_name} pos={self._pos:.3f}")
         back = self._return_to
         if self._mode == EDITED and self._map is not None and self._map.pieces:
             end = self._map.pieces[-1].src_end
@@ -386,6 +410,11 @@ class PreviewEngine(QObject):
         slot = self.active
         t = slot.player.position() / 1000.0
         ft = slot.frame_time
+        if self._trace_ticks < 40:
+            self._trace_ticks += 1
+            self._log(f"tick player={t:.3f} frame={ft:.3f} pos={self._pos:.3f} "
+                      f"pending={self._pending[0] if self._pending else None} "
+                      f"state={slot.player.playbackState().name}")
         # position() may lag behind right after a switch
         if ft >= 0 and abs(ft - t) < 0.25:
             t = max(t, ft)
@@ -459,6 +488,8 @@ class PreviewEngine(QObject):
         # re-opening) must not count: check what the player reports now
         loaded_now = slot.player.mediaStatus() in (
             QMediaPlayer.LoadedMedia, QMediaPlayer.BufferingMedia, QMediaPlayer.BufferedMedia)
+        self._log(f"status slot{slot.index} {status.name} now={slot.player.mediaStatus().name} "
+                  f"loaded={self._loaded} playing={self._playing} active={self._active}")
         if status == QMediaPlayer.LoadedMedia and slot.index == 0 and not self._loaded:
             if not loaded_now or not self._source:
                 return
@@ -476,6 +507,7 @@ class PreviewEngine(QObject):
             self.mediaLoaded.emit(False, slot.player.errorString())
 
     def _on_error(self, slot: _Slot, message: str) -> None:
+        self._log(f"error slot{slot.index} {message}")
         if slot.index == 0 and not self._loaded:
             self.mediaLoaded.emit(False, message)
 
