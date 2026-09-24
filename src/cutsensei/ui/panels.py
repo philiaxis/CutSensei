@@ -115,7 +115,7 @@ class MediaPanel(QTabWidget):
         rb.addWidget(self.review_play)
         rb.addWidget(self.review_done)
         rl.addLayout(rb)
-        self.addTab(review, tr("To check"))
+        self.addTab(review, tr("Review"))
 
         # ---- deleted tab
         cuts = QWidget()
@@ -131,7 +131,7 @@ class MediaPanel(QTabWidget):
         cb.addWidget(self.cut_play)
         cb.addWidget(self.cut_restore)
         cl.addLayout(cb)
-        self.addTab(cuts, tr("Deleted"))
+        self.addTab(cuts, tr("Removed"))
 
         self.review_tree.itemSelectionChanged.connect(
             lambda: self._tree_selected(self.review_tree))
@@ -229,9 +229,9 @@ class MediaPanel(QTabWidget):
             else:
                 self.pending_label.setText("")
             self._fill_trees()
-            self.setTabText(1, tr("To check") + (f" ({open_n})" if open_n else ""))
+            self.setTabText(1, tr("Review") + (f" ({open_n})" if open_n else ""))
             n_cut = sum(1 for s in p.timeline if s.action == Action.CUT)
-            self.setTabText(2, tr("Deleted") + (f" ({n_cut})" if n_cut else ""))
+            self.setTabText(2, tr("Removed") + (f" ({n_cut})" if n_cut else ""))
             self._update_poster()
         finally:
             self._updating = False
@@ -346,6 +346,8 @@ class AutoSpin(QDoubleSpinBox):
             self.setSuffix(suffix)
         self._auto = lo - step
         self.setKeyboardTracking(False)
+        self.setMinimumWidth(84)
+        self.setMaximumWidth(120)
 
     def value_or_none(self) -> Optional[float]:
         v = self.value()
@@ -366,7 +368,7 @@ class SegmentProperties(QWidget):
         super().__init__(parent)
         self.ctrl = controller
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(12, 12, 12, 12)
+        lay.setContentsMargins(10, 10, 10, 10)
         lay.setSpacing(10)
         self.empty = QLabel(tr("Select a segment on the timeline to edit it."))
         self.empty.setObjectName("dim")
@@ -400,9 +402,12 @@ class SegmentProperties(QWidget):
         self.act_group = QButtonGroup(self)
         self.act_group.setExclusive(True)
         self.act_buttons = {}
+        short = {Action.KEEP: tr("Normal"), Action.SPEED: tr("Speed up"),
+                 Action.CUT: tr("Delete")}
         for act, icon_name in ((Action.KEEP, "keep"), (Action.SPEED, "speed"),
                                (Action.CUT, "cut")):
-            b = QPushButton(action_label(act))
+            b = QPushButton(short[act])
+            b.setToolTip(action_label(act))
             b.setObjectName("segment")
             b.setCheckable(True)
             b.setIcon(icons.icon(icon_name))
@@ -415,6 +420,7 @@ class SegmentProperties(QWidget):
         bl.addLayout(seg_row)
 
         form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         form.setLabelAlignment(Qt.AlignLeft)
         form.setHorizontalSpacing(10)
         form.setVerticalSpacing(8)
@@ -627,6 +633,7 @@ class AutoEditPanel(QScrollArea):
 
         lay.addWidget(_heading(tr("Margin around speech")))
         pad = QFormLayout()
+        pad.setRowWrapPolicy(QFormLayout.WrapLongRows)
         pad.setHorizontalSpacing(10)
         self.pad_before = QDoubleSpinBox()
         self.pad_after = QDoubleSpinBox()
@@ -664,6 +671,7 @@ class AutoEditPanel(QScrollArea):
         lay.addWidget(self.adv_toggle)
         self.adv = QWidget()
         adv = QFormLayout(self.adv)
+        adv.setRowWrapPolicy(QFormLayout.WrapLongRows)
         adv.setContentsMargins(4, 0, 0, 0)
         adv.setHorizontalSpacing(10)
         adv.setVerticalSpacing(6)

@@ -104,7 +104,7 @@ QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{ border
 QComboBox QAbstractItemView {{ background: {BG2}; border: 1px solid {BORDER};
                                selection-background-color: {ACCENT_DIM}; }}
 QTabWidget::pane {{ border: none; border-top: 1px solid {BORDER}; }}
-QTabBar::tab {{ background: transparent; color: {TEXT_DIM}; padding: 6px 12px;
+QTabBar::tab {{ background: transparent; color: {TEXT_DIM}; padding: 6px 9px;
                 border: none; border-bottom: 2px solid transparent; }}
 QTabBar::tab:selected {{ color: {TEXT}; border-bottom: 2px solid {ACCENT}; }}
 QTabBar::tab:hover {{ color: {TEXT}; }}

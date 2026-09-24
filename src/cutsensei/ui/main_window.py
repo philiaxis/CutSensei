@@ -201,8 +201,8 @@ class MainWindow(QMainWindow):
         cl.addWidget(self.transport)
         self.timeline = TimelinePanel(self.ctrl)
 
-        self.media_panel.setMinimumWidth(230)
-        self.props.setMinimumWidth(300)
+        self.media_panel.setMinimumWidth(260)
+        self.props.setMinimumWidth(330)
         center.setMinimumWidth(520)
         self.hsplit = QSplitter(Qt.Horizontal)
         self.hsplit.addWidget(self.media_panel)
@@ -337,11 +337,11 @@ class MainWindow(QMainWindow):
         if not isinstance(self.qs.value("hsplit"), QByteArray):
             # first start on a small screen: give the preview the room
             w = self.width()
-            if w < 1180:
-                self.hsplit.setSizes([0, max(520, w - 300), 300])
+            if w < 1220:
+                self.hsplit.setSizes([0, max(520, w - 330), 330])
             else:
-                side = 250 if w < 1500 else 270
-                right = 310 if w < 1500 else 340
+                side = 260 if w < 1500 else 280
+                right = 330 if w < 1500 else 360
                 self.hsplit.setSizes([side, w - side - right, right])
         self._sync_panel_actions()
         QTimer.singleShot(0, self._detect_gpu)
@@ -512,7 +512,7 @@ class MainWindow(QMainWindow):
         self._toggle_panel(0, on, 270)
 
     def _toggle_right(self, on: bool) -> None:
-        self._toggle_panel(2, on, 340)
+        self._toggle_panel(2, on, 350)
 
     def _toggle_panel(self, index: int, on: bool, default: int) -> None:
         sizes = self.hsplit.sizes()

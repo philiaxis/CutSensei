@@ -163,6 +163,7 @@ STRINGS = {
     "No preview": "プレビューなし",
     "No project": "プロジェクトがありません",
     "No video loaded": "動画が読み込まれていません",
+    "Normal": "等速",
     "Normal speed": "等速",
     "Normal speed / speed up / delete": "等速 / 倍速 / 削除",
     "Not analysed yet": "未解析",
@@ -214,6 +215,7 @@ STRINGS = {
     "Release manual changes and protection; the automatic edit decides this part again.":
         "手動修正と保護を解除し、この部分を自動編集に任せます。",
     "Remaining: about {t}": "残り 約{t}",
+    "Removed": "削除区間",
     "Remove protection": "保護を解除",
     "Rendering audio...": "音声を処理しています…",
     "Reset settings": "設定のリセット",
@@ -221,6 +223,7 @@ STRINGS = {
     "Restore": "復元",
     "Restore deleted segment": "削除した区間を復元",
     "Restore deleted segment (R)": "削除した区間を復元 (R)",
+    "Review": "確認対象",
     "Revert to automatic": "自動判定に戻す",
     "Run auto edit": "自動編集を実行",
     "Same as source ({f:g} fps)": "元動画と同じ（{f:g} fps）",

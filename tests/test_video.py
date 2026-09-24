@@ -79,3 +79,24 @@ def test_region_helpers():
     assert cw % 2 == 0 and ch % 2 == 0 and aw <= 512 and ah <= 320
     mask = region_mask(regions, (aw, ah))
     assert mask.any() and not mask.all()
+
+
+def test_whiteboard_dark_marker():
+    import cv2
+
+    rng = np.random.default_rng(4)
+    canvas = np.full((H, W), 225, np.uint8)       # bright whiteboard
+    frames = []
+    for t in range(80):
+        if 20 <= t < 60:
+            x = 20 + (t - 20) * 6
+            cv2.line(canvas, (x, 80), (x + 5, 95), 40, 2)   # dark marker
+        frames.append(add_noise(canvas, rng))
+    mask = np.ones((H, W), bool)
+    tr = BoardTracker((W, H), mask, 4.0, initial_background=frames[0])
+    for f in frames:
+        tr.feed(f)
+    feats = tr.finish()
+    assert feats.polarity == -1
+    assert feats.ink[20:64].mean() > 20 * max(np.concatenate([feats.ink[:18],
+                                                              feats.ink[68:]]).mean(), 0.5)
