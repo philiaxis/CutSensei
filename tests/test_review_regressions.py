@@ -141,7 +141,9 @@ def lagging_players(monkeypatch):
 
     from PySide6.QtMultimedia import QMediaPlayer
 
-    real_pos, real_set = QMediaPlayer.position, QMediaPlayer.setPosition
+    from cutsensei.ui import preview
+
+    real_pos, real_seek = QMediaPlayer.position, preview._Slot.seek
     state = {}
 
     def position(self):
@@ -150,12 +152,12 @@ def lagging_players(monkeypatch):
             return old[0]
         return real_pos(self)
 
-    def set_position(self, ms):
+    def seek(self, seconds):
         # a new seek before the previous one finished keeps the stale value
-        state[id(self)] = (position(self), time.monotonic())
-        real_set(self, ms)
+        state[id(self.player)] = (position(self.player), time.monotonic())
+        real_seek(self, seconds)
 
-    monkeypatch.setattr(QMediaPlayer, "setPosition", set_position)
+    monkeypatch.setattr(preview._Slot, "seek", seek)
     monkeypatch.setattr(QMediaPlayer, "position", position)
 
 
@@ -225,3 +227,76 @@ def test_preview_reload_is_not_ready_before_the_new_media_is(qtbot, short_video)
     eng.play()
     qtbot.wait(300)
     assert eng.playing and 0.0 < eng.position < 1.0
+
+
+@pytest.fixture
+def glitching_players(monkeypatch):
+    """Like the macOS player: right after a seek position() reports the new
+    time, then for a moment the time from before the seek again."""
+    import time
+
+    from PySide6.QtMultimedia import QMediaPlayer
+
+    from cutsensei.ui import preview
+
+    real_pos, real_seek = QMediaPlayer.position, preview._Slot.seek
+    state = {}
+
+    def position(self):
+        old = state.get(id(self))
+        if old is not None and 0.03 <= time.monotonic() - old[1] <= 0.09:
+            return old[0]
+        return real_pos(self)
+
+    def seek(self, seconds):
+        state[id(self.player)] = (real_pos(self.player), time.monotonic())
+        real_seek(self, seconds)
+
+    monkeypatch.setattr(preview._Slot, "seek", seek)
+    monkeypatch.setattr(QMediaPlayer, "position", position)
+
+
+@pytest.mark.slow
+def test_preview_ignores_stale_position_after_seek(qtbot, short_video, glitching_players):
+    """macOS reported the pre-seek position again shortly after restarting
+    from the beginning; the preview took it for the end of the edit and
+    stopped."""
+    _path, spec = short_video
+    eng = _engine(qtbot, short_video, [Segment(0, 1.23, Kind.SPEECH, Action.KEEP),
+                                       Segment(1.23, spec.duration, Kind.IDLE, Action.CUT)])
+    eng.seek(0.8)
+    eng.play()
+    qtbot.waitUntil(lambda: not eng.playing, timeout=5000)
+    eng.play()
+    qtbot.wait(300)
+    assert eng.playing and 0.0 < eng.position < 0.9, eng.trace_text()
+    # jumping over a cut is not disturbed either
+    eng.pause()
+    eng2 = _engine(qtbot, short_video, [Segment(0, 1.0, Kind.SPEECH, Action.KEEP),
+                                        Segment(1.0, 6.0, Kind.IDLE, Action.CUT),
+                                        Segment(6.0, spec.duration, Kind.SPEECH, Action.KEEP)])
+    eng2.seek(0.0)
+    eng2.play()
+    qtbot.wait(2200)
+    eng2.pause()
+    assert eng2.position > 6.3, eng2.trace_text()
+
+
+@pytest.mark.slow
+def test_preview_switches_players_without_frame_timestamps(qtbot, short_video, monkeypatch):
+    """On macOS video frames carry no timestamps (startTime() == -1); the
+    prepared second player must still be used to jump over a cut instantly."""
+    from PySide6.QtMultimedia import QVideoFrame
+
+    monkeypatch.setattr(QVideoFrame, "startTime", lambda self: -1)
+    _path, spec = short_video
+    eng = _engine(qtbot, short_video, [Segment(0, 1.0, Kind.SPEECH, Action.KEEP),
+                                       Segment(1.0, 6.0, Kind.IDLE, Action.CUT),
+                                       Segment(6.0, spec.duration, Kind.SPEECH, Action.KEEP)])
+    eng.seek(0.0)
+    eng.play()
+    qtbot.wait(2200)
+    eng.pause()
+    trace = eng.trace_text()
+    assert "standby_ready=True" in trace, trace
+    assert eng.position > 6.3, trace

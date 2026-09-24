@@ -8,12 +8,14 @@ adjacent parts only change the playback rate of the active player.
 
 from __future__ import annotations
 
+import logging
 import sys
 import time
 from collections import deque
 from typing import List, Optional, Tuple
 
-from PySide6.QtCore import QObject, QRectF, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import (Q_ARG, QMetaObject, QObject, QRectF, QSize, Qt, QTimer, QUrl,
+                            Signal)
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame, QVideoSink
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QSizePolicy, QSlider, QToolButton,
@@ -27,6 +29,23 @@ from .i18n import tr
 EDITED = "edited"
 SOURCE = "source"
 SEEK_TIMEOUT_S = 2.0   # give up waiting for a seek to show up in position()
+GLITCH_S = 0.4         # a position report that contradicts the clock this long is real
+
+
+def _queued(obj: QObject, method: str, *args) -> None:
+    """Call a slot of a media object from the event loop.
+
+    Qt's FFmpeg backend tears down and re-creates its audio renderer in a
+    worker thread.  Destroying the old renderer notifies our QAudioOutput /
+    QMediaPlayer - Python wrappers - and needs Python's GIL, while a call
+    made directly from Python (play, pause, stop, setPosition, setVolume...)
+    holds the GIL and waits for the Qt connection lock the worker holds: a
+    deadlock (the application froze when a video was opened or re-opened
+    after playing).  A queued call runs from the event loop, where PySide
+    has released the GIL.  (setSource() releases the GIL by itself.)
+    """
+    if not QMetaObject.invokeMethod(obj, method, Qt.QueuedConnection, *args):
+        logging.getLogger(__name__).warning("could not call %s.%s", type(obj).__name__, method)
 
 
 class _Slot:
@@ -43,10 +62,28 @@ class _Slot:
             except Exception:
                 pass
         self.frame: Optional[QVideoFrame] = None
-        self.frame_time = -1.0
+        self.frame_time = -1.0          # -1: unknown (some platforms give no timestamps)
+        self.frames = 0                 # frames received
+        self.frames_at_preload = 0
         self.preloaded: Optional[float] = None
         self.rate = 1.0
         self.volume = -1.0
+
+    # commands (asynchronous, see _queued)
+    def play(self) -> None:
+        _queued(self.player, "play")
+
+    def pause(self) -> None:
+        _queued(self.player, "pause")
+
+    def seek(self, seconds: float) -> None:
+        _queued(self.player, "setPosition", Q_ARG("qint64", int(round(seconds * 1000))))
+
+    def set_rate(self, rate: float) -> None:
+        _queued(self.player, "setPlaybackRate", Q_ARG(float, float(rate)))
+
+    def set_volume(self, volume: float) -> None:
+        _queued(self.audio, "setVolume", Q_ARG("float", float(volume)))
 
 
 class PreviewEngine(QObject):
@@ -82,6 +119,10 @@ class PreviewEngine(QObject):
         self._source: Optional[str] = None
         # (target, monotonic time) of a seek the player may not have finished
         self._pending: Optional[Tuple[float, float]] = None
+        # last accepted (position, monotonic time) while playing, and since
+        # when position() has contradicted it
+        self._anchor: Optional[Tuple[float, float]] = None
+        self._glitch_since: Optional[float] = None
         # recent playback events, for diagnosing platform specific behaviour
         self._trace: deque = deque(maxlen=400)
         self._trace_t0 = time.monotonic()
@@ -135,11 +176,11 @@ class PreviewEngine(QObject):
             slot.frame = None
             slot.frame_time = -1.0
             slot.preloaded = None
-            slot.audio.setVolume(0.0)
+            slot.set_volume(0.0)
+            slot.volume = -1.0
             # setSource() ignores an unchanged URL; clear it first so that
             # re-opening the same file loads it again (and signals LoadedMedia).
-            # stop() itself reports "LoadedMedia" for the old media.
-            slot.player.stop()
+            # Clearing the source also stops the player.
             slot.player.setSource(QUrl())
         self._loaded = False
         self._source = path
@@ -210,22 +251,25 @@ class PreviewEngine(QObject):
             self._seek_active(0.0)
         self._playing = True
         self._trace_ticks = 0
+        self._anchor = None
+        self._glitch_since = None
         self._apply_current(force=True)
-        self.active.player.play()
+        self.active.play()
         self._timer.start()
         self._preload_next()
         self.playingChanged.emit(True)
 
     def pause(self) -> None:
         was = self._playing
+        self._anchor = None
         if was:
             self._log(f"pause from {sys._getframe(1).f_code.co_name} pos={self._pos:.3f}")
         self._playing = False
         self._timer.stop()
         for slot in self._slots:
-            if slot.player.playbackState() == QMediaPlayer.PlayingState:
-                slot.player.pause()
-            slot.audio.setVolume(0.0)
+            # always: a queued play() may not have been carried out yet
+            slot.pause()
+            slot.set_volume(0.0)
             slot.volume = -1.0
         if self._restore_mode is not None:
             self._mode = self._restore_mode
@@ -304,8 +348,9 @@ class PreviewEngine(QObject):
     def _seek_active(self, t: float) -> None:
         self._log(f"seek {t:.3f} (player at {self.active.player.position() / 1000.0:.3f})")
         self._pos = t
-        self.active.player.setPosition(int(round(t * 1000)))
+        self.active.seek(t)
         self._pending = (t, time.monotonic())
+        self._anchor = None
         self.positionChanged.emit(t)
 
     def _piece_for(self, t: float):
@@ -316,11 +361,11 @@ class PreviewEngine(QObject):
 
     def _apply_rate(self, slot: _Slot, rate: float, volume: float) -> None:
         if abs(slot.rate - rate) > 1e-6:
-            slot.player.setPlaybackRate(rate)
+            slot.set_rate(rate)
             slot.rate = rate
         vol = 0.0 if self._muted else self._volume * min(1.0, volume)
         if abs(slot.volume - vol) > 1e-6:
-            slot.audio.setVolume(vol)
+            slot.set_volume(vol)
             slot.volume = vol
 
     def _apply_current(self, force: bool = False) -> None:
@@ -360,35 +405,38 @@ class PreviewEngine(QObject):
             return
         sb.preloaded = target
         sb.frame_time = -1.0
-        if sb.player.playbackState() == QMediaPlayer.PlayingState:
-            sb.player.pause()
-        sb.audio.setVolume(0.0)
+        sb.frames_at_preload = sb.frames
+        sb.pause()
+        sb.set_volume(0.0)
         sb.volume = -1.0
-        sb.player.pause()
-        sb.player.setPosition(int(round(target * 1000)))
+        sb.seek(target)
 
     def _jump(self, target: float) -> None:
         sb = self.standby
+        # ready: a frame arrived after the preload seek, and it (or, when frames
+        # carry no timestamps as on macOS, the player) is at the target
+        at = sb.frame_time if sb.frame_time >= 0 else sb.player.position() / 1000.0
         ready = (sb.preloaded is not None and abs(sb.preloaded - target) < 1e-3
-                 and sb.frame_time >= 0 and abs(sb.frame_time - target) < 0.5)
+                 and sb.frames > sb.frames_at_preload and abs(at - target) < 0.5)
         self._log(f"jump {target:.3f} standby_ready={ready}")
         if ready:
             old = self.active
             self._active = 1 - self._active
             self._pos = target
             self._apply_current(force=True)
-            self.active.player.play()
-            old.player.pause()
-            old.audio.setVolume(0.0)
+            self.active.play()
+            old.pause()
+            old.set_volume(0.0)
             old.volume = -1.0
             old.preloaded = None
             if self.active.frame is not None:
                 self.frameReady.emit(self.active.frame)
         else:
-            self.active.player.setPosition(int(round(target * 1000)))
+            self.active.seek(target)
             self._pos = target
             self._apply_current(force=True)
         self._pending = (target, time.monotonic())
+        self._anchor = None
         self._preload_next()
 
     def _finish(self) -> None:
@@ -436,6 +484,24 @@ class PreviewEngine(QObject):
                 return
             else:
                 self._pending = None
+        # A report that contradicts the playback clock is not trusted at once:
+        # the macOS player briefly reports the time from before a seek again
+        # (which looked like the end of the edit and stopped the playback).
+        now = time.monotonic()
+        if self._anchor is not None:
+            at, aw = self._anchor
+            expected = at + (now - aw) * slot.rate
+            if abs(t - expected) > 0.35 + 0.1 * max(1.0, slot.rate):
+                if self._glitch_since is None:
+                    self._glitch_since = now
+                if now - self._glitch_since < GLITCH_S:
+                    self._log(f"ignore player={t:.3f} expected={expected:.3f}")
+                    t = expected
+                else:
+                    self._glitch_since = None       # it really is there
+            else:
+                self._glitch_since = None
+        self._anchor = (t, now)
         self._pos = t
         if self._stop_at is not None and t >= self._stop_at:
             target = self._return_to if self._return_to is not None else \
@@ -475,6 +541,7 @@ class PreviewEngine(QObject):
         if not frame.isValid():
             return
         slot.frame = frame
+        slot.frames += 1
         st = frame.startTime()
         if st >= 0:
             slot.frame_time = st / 1_000_000.0
@@ -494,12 +561,12 @@ class PreviewEngine(QObject):
             if not loaded_now or not self._source:
                 return
             self._loaded = True
-            slot.player.pause()
-            slot.player.setPosition(0)
+            slot.pause()
+            slot.seek(0.0)
             self.mediaLoaded.emit(True, "")
         elif status == QMediaPlayer.LoadedMedia and slot.index == 1:
             if loaded_now and not (slot is self.active and self._playing):
-                slot.player.pause()
+                slot.pause()
         elif status == QMediaPlayer.EndOfMedia and slot is self.active and self._playing:
             self._pos = self._duration
             self._finish()
