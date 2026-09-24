@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-import threading
 from typing import List, Optional
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QThread, QTimer, Signal
@@ -317,6 +316,26 @@ class EncoderProbe(QThread):
 
 
 _encoder_cache: Optional[List[str]] = None
+_probe_thread: Optional[EncoderProbe] = None
+
+
+def _shared_probe() -> EncoderProbe:
+    """One application wide probe thread (it outlives the dialog)."""
+    global _probe_thread
+    if _probe_thread is None:
+        _probe_thread = EncoderProbe()
+
+        def done(names: List[str]) -> None:
+            global _encoder_cache
+            _encoder_cache = names
+        _probe_thread.found.connect(done)
+        _probe_thread.start()
+    return _probe_thread
+
+
+def stop_background_threads() -> None:
+    if _probe_thread is not None and _probe_thread.isRunning():
+        _probe_thread.wait(20000)
 
 
 class ExportDialog(QDialog):
@@ -389,9 +408,8 @@ class ExportDialog(QDialog):
         self.resize(560, 0)
         self._fill_encoders(_encoder_cache or [Encoder.AUTO], probing=_encoder_cache is None)
         if _encoder_cache is None:
-            self._probe = EncoderProbe(self)
-            self._probe.found.connect(self._encoders_found)
-            self._probe.start()
+            probe = _shared_probe()
+            probe.found.connect(self._encoders_found)
 
     def _fill_encoders(self, names: List[str], probing: bool = False) -> None:
         current = self.encoder.currentData() or self.settings.encoder
@@ -404,9 +422,10 @@ class ExportDialog(QDialog):
         self.encoder.setCurrentIndex(max(0, self.encoder.findData(current)))
 
     def _encoders_found(self, names: List[str]) -> None:
-        global _encoder_cache
-        _encoder_cache = names
-        self._fill_encoders(names)
+        try:
+            self._fill_encoders(names)
+        except RuntimeError:  # dialog already closed
+            pass
 
     def _browse(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, tr("Export"), self.path.text(),
@@ -446,16 +465,7 @@ class ExportDialog(QDialog):
 
 def prewarm_encoder_probe() -> None:
     """Detect working encoders in the background at start-up."""
-    def work() -> None:
-        global _encoder_cache
-        try:
-            from ..render.exporter import detect_available_encoders
-
-            _encoder_cache = detect_available_encoders()
-        except Exception:
-            pass
-
-    threading.Thread(target=work, daemon=True).start()
+    _shared_probe()
 
 
 # ============================================================================
@@ -536,6 +546,7 @@ SHORTCUTS = [
     ("Delete", "Delete and close the gap"),
     ("R", "Restore deleted segment"),
     ("P", "Always keep (protect)"),
+    ("C", "Mark as checked"),
     ("Tab", "Switch preview: edited / original"),
     ("+ / - / 0", "Zoom in / out / fit"),
     ("Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"),

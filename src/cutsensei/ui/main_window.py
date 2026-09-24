@@ -55,6 +55,9 @@ class MainWindow(QMainWindow):
         self._restore_window()
         self._update_title()
         self._update_actions()
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._stop_threads)
 
     # ================================================================== UI
     def _build_actions(self) -> None:
@@ -338,16 +341,25 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.engine.pause()
-        for job in (self._thumb_job, getattr(self, "_gpu_job", None)):
-            if job is not None:
-                job.cancel()
-                job.wait(5000)
-        self._thumb_job = None
-        self._gpu_job = None
+        self._stop_threads()
         self.qs.setValue("geometry", self.saveGeometry())
         self.qs.setValue("hsplit", self.hsplit.saveState())
         self.qs.setValue("vsplit", self.vsplit.saveState())
         super().closeEvent(event)
+
+    def _stop_threads(self) -> None:
+        from .dialogs import stop_background_threads
+
+        for job in (self._thumb_job, getattr(self, "_gpu_job", None)):
+            if job is not None:
+                try:
+                    job.cancel()
+                    job.wait(20000)
+                except RuntimeError:  # already deleted
+                    pass
+        self._thumb_job = None
+        self._gpu_job = None
+        stop_background_threads()
 
     def _detect_gpu(self) -> None:
         def probe_gpu(_progress, _token):

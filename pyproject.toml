@@ -9,7 +9,7 @@ description = "Automatic editor for lecture videos: speech at normal speed, sile
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Philiaxis" }]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = ["video", "editor", "lecture", "education", "ffmpeg", "vad", "jump-cut"]
 classifiers = [
     "Development Status :: 4 - Beta",
