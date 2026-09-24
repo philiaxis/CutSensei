@@ -235,6 +235,10 @@ STRINGS = {
         "手動で修正・保護した区間は、再適用しても上書きされません。",
     "Select a segment on the timeline to edit it.": "タイムラインで区間を選択すると編集できます。",
     "Select all segments": "すべての区間を選択",
+    "Set segment end to playhead": "区間の終了を再生位置に合わせる",
+    "Set segment start / end to playhead": "区間の開始 / 終了を再生位置に合わせる",
+    "Set segment start to playhead": "区間の開始を再生位置に合わせる",
+    "There is no neighbouring segment on that side.": "その側には隣の区間がありません。",
     "Settings changed. Press \"Re-apply\" to regenerate the edit.":
         "設定が変更されました。「再適用」で編集案を作り直せます。",
     "Short pause (kept)": "短い間（残す）",

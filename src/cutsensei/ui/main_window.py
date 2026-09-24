@@ -122,6 +122,10 @@ class MainWindow(QMainWindow):
                             lambda: self.ctrl.set_action(Action.CUT))
         self.a_restore = act("Restore", "restore", "R", lambda: self.ctrl.restore())
         self.a_protect = act("Always keep (protect)", "protect", "P", self._toggle_protect)
+        self.a_set_start = act("Set segment start to playhead", None, "[",
+                               lambda: self._set_edge_to_playhead(start=True))
+        self.a_set_end = act("Set segment end to playhead", None, "]",
+                             lambda: self._set_edge_to_playhead(start=False))
         self.a_unlock = act("Revert to automatic", "unlock", None, lambda: self.ctrl.unlock())
         self.a_unlock_all = act("Release all manual edits...", None, None, self._unlock_all)
         self.a_select_all = act("Select all segments", None, QKeySequence.SelectAll,
@@ -241,8 +245,9 @@ class MainWindow(QMainWindow):
         for a in (self.a_undo, self.a_redo):
             m.addAction(a)
         m.addSeparator()
-        for a in (self.a_split, self.a_keep, self.a_speed, self.a_delete, self.a_restore,
-                  self.a_protect, self.a_mark_checked, self.a_unlock):
+        for a in (self.a_split, self.a_set_start, self.a_set_end, self.a_keep, self.a_speed,
+                  self.a_delete, self.a_restore, self.a_protect, self.a_mark_checked,
+                  self.a_unlock):
             m.addAction(a)
         m.addSeparator()
         m.addAction(self.a_select_all)
@@ -423,7 +428,7 @@ class MainWindow(QMainWindow):
         segs = self.ctrl.selected_segments()
         has = bool(segs)
         for a in (self.a_keep, self.a_speed, self.a_delete, self.a_protect, self.a_unlock,
-                  self.a_mark_checked):
+                  self.a_mark_checked, self.a_set_start, self.a_set_end):
             a.setEnabled(has and not self._busy)
         self.a_restore.setEnabled(any(s.action == Action.CUT for s in segs))
         tp = self.timeline
@@ -981,6 +986,18 @@ class MainWindow(QMainWindow):
     def split_at_playhead(self) -> None:
         if not self.ctrl.split_at(self.engine.position):
             self.statusBar().showMessage(tr("Cannot split here (too close to a boundary)."), 4000)
+
+    def _set_edge_to_playhead(self, start: bool) -> None:
+        idx = self.ctrl.selected_indices()
+        tl = self.ctrl.timeline
+        if tl is None:
+            return
+        t = self.engine.position
+        i = (idx[0] if start else idx[-1]) if idx else tl.index_at(t)
+        boundary = i if start else i + 1
+        if not self.ctrl.set_boundary(boundary, t):
+            self.statusBar().showMessage(tr("There is no neighbouring segment on that side."),
+                                         4000)
 
     def _set_speed_action(self) -> None:
         segs = self.ctrl.selected_segments()

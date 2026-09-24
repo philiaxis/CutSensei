@@ -542,6 +542,7 @@ SHORTCUTS = [
     ("N / Shift+N", "Next / previous item to check"),
     ("A", "Play around the playhead"),
     ("S", "Split at playhead"),
+    ("[ / ]", "Set segment start / end to playhead"),
     ("1 / 2 / 3", "Normal speed / speed up / delete"),
     ("Delete", "Delete and close the gap"),
     ("R", "Restore deleted segment"),

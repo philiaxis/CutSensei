@@ -254,6 +254,15 @@ class ProjectController(QObject):
                                                self.project.settings, keep_locked=False)
         self._changed()
 
+    def set_boundary(self, index: int, t: float) -> bool:
+        """Move boundary ``index`` (between segments index-1 and index) to ``t``."""
+        if not self.project or not (0 < index < len(self.project.timeline)):
+            return False
+        self._snapshot(tr("Adjust boundary"))
+        self.project.timeline.move_boundary(index, t)
+        self._changed()
+        return True
+
     # boundary dragging: begin once, update many times
     def begin_boundary_drag(self) -> None:
         if self.project:
